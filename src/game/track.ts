@@ -160,6 +160,45 @@ export function getTrackDef(id: string): TrackDef {
   return TRACKS.find((t) => t.id === id) ?? TRACKS[0];
 }
 
+/**
+ * A circuit outline as an SVG path in a 0..100 box, for menus and minimaps.
+ * Samples the spline directly so it costs microseconds — building the full
+ * `Track` just to draw a 40 px thumbnail would be absurd.
+ */
+export function trackOutline(def: TrackDef, samples = 96): string {
+  const curve = new CatmullRomCurve3(
+    def.points.map(([x, z]) => new Vector3(x, 0, z)),
+    true,
+    "centripetal",
+    0.5,
+  );
+  const pts: [number, number][] = [];
+  const v = new Vector3();
+  let minX = Infinity,
+    maxX = -Infinity,
+    minZ = Infinity,
+    maxZ = -Infinity;
+  for (let i = 0; i < samples; i++) {
+    curve.getPoint(i / samples, v);
+    pts.push([v.x, v.z]);
+    if (v.x < minX) minX = v.x;
+    if (v.x > maxX) maxX = v.x;
+    if (v.z < minZ) minZ = v.z;
+    if (v.z > maxZ) maxZ = v.z;
+  }
+  // Uniform scale keeps the circuit's real proportions instead of stretching it.
+  const span = Math.max(maxX - minX, maxZ - minZ) || 1;
+  const ox = (span - (maxX - minX)) / 2;
+  const oz = (span - (maxZ - minZ)) / 2;
+  let d = "";
+  for (let i = 0; i < pts.length; i++) {
+    const x = ((pts[i][0] - minX + ox) / span) * 96 + 2;
+    const y = ((pts[i][1] - minZ + oz) / span) * 96 + 2;
+    d += `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
+  }
+  return d + "Z";
+}
+
 /** Number of arc-length stations. Power of two keeps the modulo cheap. */
 export const STATIONS = 2048;
 
@@ -212,6 +251,9 @@ export class Track {
 
   readonly stationLength: number;
   readonly length: number;
+  /** Lowest point of the centreline — the ground plane sits below this. */
+  readonly minY: number = 0;
+  readonly maxY: number = 0;
 
   /** Coarse bucket grid for cold-start projection. */
   private readonly cell: number;
@@ -303,13 +345,25 @@ export class Track {
     smoothWrapInPlace(this.halfW, 12);
     smoothWrapInPlace(this.bank, 20);
 
-    // Gentle elevation change so the circuit is not a flat disc. Two harmonics
-    // keyed to lap position, smoothed to guarantee C1 continuity at the seam.
+    // Gentle elevation change so the circuit is not a flat disc. Harmonics of
+    // the lap position are inherently seamless at the start/finish wrap.
+    //
+    // The amplitude is deliberately small: the world beyond the barriers is a
+    // single flat plane, so a circuit that climbed 20 m would visibly float
+    // above its own surroundings. A few metres reads as undulation; more reads
+    // as a bug.
+    let lo = Infinity;
+    let hi = -Infinity;
     for (let i = 0; i < STATIONS; i++) {
       const u = (i / STATIONS) * Math.PI * 2;
-      this.py[i] =
-        Math.sin(u * 1) * 6.5 + Math.sin(u * 2 + 1.1) * 3.4 + Math.sin(u * 3 + 2.7) * 1.6;
+      const y =
+        Math.sin(u * 1) * 2.3 + Math.sin(u * 2 + 1.1) * 1.25 + Math.sin(u * 3 + 2.7) * 0.6;
+      this.py[i] = y;
+      if (y < lo) lo = y;
+      if (y > hi) hi = y;
     }
+    this.minY = lo;
+    this.maxY = hi;
 
     // Build the coarse lookup grid.
     let minX = Infinity,

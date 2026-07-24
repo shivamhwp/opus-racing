@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#07070c" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="description" content="Opus Racing — a real-time multiplayer Formula 1 circuit racer." />
+    <title>OPUS RACING</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2307070c'/%3E%3Cpath d='M5 20h4l2-5h8l2 5h4v3H5z' fill='%23ff2d55'/%3E%3Ccircle cx='10' cy='23' r='3' fill='%23f2f3f8'/%3E%3Ccircle cx='22' cy='23' r='3' fill='%23f2f3f8'/%3E%3C/svg%3E"
+    />
+    <link rel="preload" as="style" href="/src/styles.css" />
+  </head>
+  <body>
+    <!-- The circuit renders here at all times, including behind the menus. -->
+    <canvas id="stage" aria-hidden="true"></canvas>
+    <div id="vignette" aria-hidden="true"></div>
+
+    <!-- Screens (menu / lobby / results) and the in-race HUD are both built by
+         script so the shell ships as almost nothing. -->
+    <div id="ui"></div>
+    <div id="hud" class="hud" hidden></div>
+
+    <noscript>
+      <div class="noscript">Opus Racing needs JavaScript and WebGL2.</div>
+    </noscript>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

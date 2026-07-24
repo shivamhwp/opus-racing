@@ -1,0 +1,21 @@
+#:schema node_modules/wrangler/config-schema.json
+#
+# Hosts the RaceRoom Durable Object class. This Worker has no public route of
+# its own — the Pages project reaches rooms through a binding, so the password
+# gate cannot be walked around by hitting the realtime layer directly.
+
+name = "opus-racing-rooms"
+main = "src/index.ts"
+compatibility_date = "2026-01-15"
+workers_dev = false
+
+[[durable_objects.bindings]]
+name = "RACE_ROOM"
+class_name = "RaceRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RaceRoom"]
+
+[observability]
+enabled = true

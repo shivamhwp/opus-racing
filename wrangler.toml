@@ -1,0 +1,16 @@
+#:schema node_modules/wrangler/config-schema.json
+#
+# Cloudflare Pages project. Serves the built client plus the auth + websocket
+# Functions, and binds the RaceRoom Durable Object from the rooms Worker.
+#
+# Set APP_PASSWORD in the Pages project (Settings -> Variables and Secrets, or
+# `wrangler pages secret put APP_PASSWORD`). It is the only secret this app has.
+
+name = "opus-racing"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-01-15"
+
+[[durable_objects.bindings]]
+name = "RACE_ROOM"
+class_name = "RaceRoom"
+script_name = "opus-racing-rooms"
