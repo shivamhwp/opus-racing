@@ -42,7 +42,8 @@ const result = await page.evaluate(async () => {
 
   function open(name) {
     return new Promise((res, rej) => {
-      const ws = new WebSocket(`ws://${location.host}/api/ws?room=${ROOM}&name=${name}`);
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(`${proto}//${location.host}/api/ws?room=${ROOM}&name=${name}`);
       ws.binaryType = "arraybuffer";
       ws.msgs = [];
       ws.onmessage = (e) => { if (typeof e.data === "string") ws.msgs.push(JSON.parse(e.data)); };
