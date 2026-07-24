@@ -5,7 +5,7 @@ import {
   Mesh,
   PlaneGeometry,
 } from "three";
-import { makeParticleMaterial } from "./materials";
+import { makeParticleMaterial, type SkyUniforms } from "./materials";
 import type { TrackDef } from "./track";
 
 /**
@@ -36,7 +36,7 @@ export class Particles {
   private readonly aData: InstancedBufferAttribute;
   private readonly aColor: InstancedBufferAttribute;
 
-  constructor(def: TrackDef) {
+  constructor(sky: SkyUniforms, def: TrackDef) {
     const quad = new PlaneGeometry(1, 1);
     const geo = new InstancedBufferGeometry();
     geo.index = quad.index;
@@ -54,7 +54,7 @@ export class Particles {
     // object would be wrong; it is small enough to always draw.
     geo.boundingSphere = null;
 
-    this.mesh = new Mesh(geo, makeParticleMaterial(def));
+    this.mesh = new Mesh(geo, makeParticleMaterial(sky, def));
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 10;
   }

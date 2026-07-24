@@ -17,15 +17,21 @@ export interface TrackDef {
   halfWidth: number;
   /** Extra tarmac run-off beyond the white line. */
   runoff: number;
-  /** UI + lighting accent, hex. */
+  /** UI + livery accent, hex. Also drives sponsor boards and sector markers. */
   accent: number;
   accent2: number;
-  /** Horizon / sky mood. */
+  /** Daylight mood. */
   skyTop: number;
   skyHorizon: number;
   sunColor: number;
+  /** Colour of light bouncing back up off the surroundings. */
+  groundTint: number;
   fogColor: number;
   fogDensity: number;
+  /** Sun direction. y sets the time of day: high is noon, low is evening. */
+  sunX: number;
+  sunY: number;
+  sunZ: number;
   /** Index into the sample array where the start/finish line sits. */
   startOffset: number;
 }
@@ -34,16 +40,20 @@ export const TRACKS: readonly TrackDef[] = [
   {
     id: "vermilion",
     name: "Vermilion Bay",
-    subtitle: "Fast sweepers · 3.4 km · night",
+    subtitle: "Fast sweepers · 3.4 km · clear midday",
     halfWidth: 8.5,
     runoff: 9,
-    accent: 0xff2d55,
-    accent2: 0x00e5ff,
-    skyTop: 0x05060f,
-    skyHorizon: 0x2a1140,
-    sunColor: 0xff5a3c,
-    fogColor: 0x120a1c,
-    fogDensity: 0.0016,
+    accent: 0xd81f3c,
+    accent2: 0x1e6fd8,
+    skyTop: 0x2f6fd0,
+    skyHorizon: 0xbcd4ea,
+    sunColor: 0xfff2df,
+    groundTint: 0x6d7a52,
+    fogColor: 0xc3d6e8,
+    fogDensity: 0.0003,
+    sunX: -0.35,
+    sunY: 0.62,
+    sunZ: -0.7,
     startOffset: 0,
     points: [
       [-40, -430],
@@ -76,16 +86,20 @@ export const TRACKS: readonly TrackDef[] = [
   {
     id: "cobalt",
     name: "Cobalt Deep",
-    subtitle: "Two DRS straights · 4.1 km · dusk",
+    subtitle: "Two DRS straights · 4.1 km · bright afternoon",
     halfWidth: 9,
     runoff: 11,
-    accent: 0x2d7bff,
-    accent2: 0x7cffb2,
-    skyTop: 0x030a18,
-    skyHorizon: 0x0d3358,
-    sunColor: 0x53c8ff,
-    fogColor: 0x061420,
-    fogDensity: 0.0013,
+    accent: 0x1157c9,
+    accent2: 0x22b07a,
+    skyTop: 0x2a63c8,
+    skyHorizon: 0xc6dcee,
+    sunColor: 0xfff6e8,
+    groundTint: 0x6a7a58,
+    fogColor: 0xccdcea,
+    fogDensity: 0.00026,
+    sunX: 0.42,
+    sunY: 0.58,
+    sunZ: -0.7,
     startOffset: 0,
     points: [
       [-520, -300],
@@ -118,16 +132,20 @@ export const TRACKS: readonly TrackDef[] = [
   {
     id: "ember",
     name: "Ember Ring",
-    subtitle: "Technical · 2.6 km · deep night",
+    subtitle: "Technical · 2.6 km · golden hour",
     halfWidth: 7.5,
     runoff: 7,
-    accent: 0xffb020,
-    accent2: 0xff2d95,
-    skyTop: 0x0a0408,
-    skyHorizon: 0x3a1008,
-    sunColor: 0xffa040,
-    fogColor: 0x160809,
-    fogDensity: 0.0021,
+    accent: 0xe07a12,
+    accent2: 0xc02a55,
+    skyTop: 0x3a72c0,
+    skyHorizon: 0xe2cfae,
+    sunColor: 0xffd9a0,
+    groundTint: 0x7a7048,
+    fogColor: 0xdfd0b4,
+    fogDensity: 0.0004,
+    sunX: -0.62,
+    sunY: 0.34,
+    sunZ: -0.7,
     startOffset: 0,
     points: [
       [-30, -330],

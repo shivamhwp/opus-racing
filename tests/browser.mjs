@@ -74,6 +74,7 @@ for (const p of [host, guest]) {
   }, [BASE, PASSWORD]);
   await p.page.goto(BASE + "/?room=" + ROOM, { waitUntil: "networkidle" });
   await p.page.waitForSelector("#nm", { timeout: 15000 });
+  if (p.name === "HOST") { await p.page.waitForTimeout(2500); await p.page.screenshot({ path: OUT + "/00-menu.png" }); }
   await p.page.fill("#nm", p.name);
   await p.page.$$eval(".hue", (els, i) => els[i].click(), p.hueIdx);
   await p.page.click("#go");

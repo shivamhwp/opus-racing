@@ -18,8 +18,13 @@ import type { TrackDef } from "./track";
  * function of a direction vector. The skydome evaluates it for the background,
  * and the car shader evaluates it again along the reflection vector to get its
  * environment reflections. One function, no cubemap, no PMREM prefilter, no
- * render-to-texture — and reflections that are automatically consistent with
+ * render-to-texture — and reflections that stay automatically consistent with
  * whatever sky the circuit is set in.
+ *
+ * The lighting model is the same everywhere: a warm directional sun, a cool
+ * hemispherical sky term, and a bounce term coming back up off the ground.
+ * That triple is what makes an outdoor daylight scene read as real rather than
+ * as a flat ambient wash.
  */
 
 // ---------------------------------------------------------------------------
@@ -32,11 +37,6 @@ float hash21(vec2 p){
   p += dot(p, p + 45.32);
   return fract(p.x * p.y);
 }
-float hash31(vec3 p){
-  p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419));
-  p *= 17.0;
-  return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
-}
 float vnoise(vec2 p){
   vec2 i = floor(p), f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
@@ -47,56 +47,86 @@ float vnoise(vec2 p){
 float fbm(vec2 p){
   return vnoise(p) * 0.6 + vnoise(p * 2.13) * 0.27 + vnoise(p * 4.7) * 0.13;
 }
+float fbm4(vec2 p){
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { v += vnoise(p) * a; p *= 2.07; a *= 0.5; }
+  return v;
+}
 `;
 
-/** The one function that defines what this world looks like. */
+/** Daylight sky. One function, used for the dome and for every reflection. */
 const SKY_GLSL = /* glsl */ `
 uniform vec3 uSkyTop;
 uniform vec3 uSkyHorizon;
 uniform vec3 uSunColor;
 uniform vec3 uSunDir;
+uniform vec3 uGroundTint;
 
 vec3 skyBase(vec3 d){
-  float h = d.y;
-  float t = pow(clamp(h * 0.5 + 0.5, 0.0, 1.0), 0.7);
-  vec3 col = mix(uSkyHorizon, uSkyTop, smoothstep(0.0, 1.0, t));
+  // Zenith to horizon. The low exponent keeps a wide pale band near the
+  // horizon, which is what real atmospheric depth looks like.
+  float t = pow(clamp(d.y, 0.0, 1.0), 0.42);
+  vec3 col = mix(uSkyHorizon, uSkyTop, t);
 
-  // Haze piled up along the horizon.
-  col += uSkyHorizon * exp(-abs(h) * 4.5) * 1.05;
-
-  // Below the horizon it is ground bounce, not sky.
-  col = mix(col, uSkyHorizon * 0.22, smoothstep(0.0, -0.22, h));
-
+  // Forward scattering around the sun.
   float sd = max(dot(d, uSunDir), 0.0);
-  col += uSunColor * pow(sd, 7.0) * 0.42;   // broad halo
-  col += uSunColor * pow(sd, 1.6) * 0.055;  // sky-wide tint
+  col += uSunColor * pow(sd, 9.0) * 0.40;
+  col += uSunColor * pow(sd, 2.5) * 0.11;
+
+  // Below the horizon a reflection sees ground, not sky.
+  col = mix(col, uGroundTint, smoothstep(0.02, -0.16, d.y));
   return col;
 }
 
-// Sharp features only the background needs — kept out of reflections so they
-// never alias across a curved car body.
-vec3 skyDetail(vec3 d){
+/** Sun disc and clouds — background only, so reflections never alias. */
+vec3 skyDetail(vec3 d, float time){
   vec3 col = vec3(0.0);
-  float sd = max(dot(d, uSunDir), 0.0);
-  col += uSunColor * smoothstep(0.9975, 0.9995, sd) * 9.0;
 
-  vec2 sph = vec2(atan(d.z, d.x), asin(clamp(d.y, -1.0, 1.0)));
-  vec2 g = sph * 74.0;
-  vec2 gi = floor(g), gf = fract(g);
-  float r = hash21(gi);
-  vec2 c = vec2(hash21(gi + 3.1), hash21(gi + 7.7));
-  float dist = length(gf - c);
-  float star = smoothstep(0.14, 0.0, dist) * smoothstep(0.972, 0.998, r);
-  col += vec3(0.85, 0.9, 1.0) * star * smoothstep(-0.02, 0.3, d.y) * 1.5;
+  float sd = max(dot(d, uSunDir), 0.0);
+  col += uSunColor * smoothstep(0.9990, 0.99975, sd) * 14.0;
+
+  if (d.y > 0.008) {
+    // Project the view direction onto a cloud deck. Dividing by d.y is the
+    // cheap flat-plane projection: the deck compresses toward the horizon
+    // exactly as a real one does.
+    vec2 uv = d.xz / d.y * 0.05;
+    uv += vec2(time * 0.0035, time * 0.0012);
+    float n = fbm4(uv) + fbm4(uv * 2.7 + 11.3) * 0.35;
+    float cover = smoothstep(0.60, 0.92, n) * smoothstep(0.008, 0.14, d.y);
+
+    // Lit tops toward the sun, cooler shadowed bases.
+    float lit = smoothstep(0.30, 0.95, n) * max(dot(d, uSunDir) * 0.5 + 0.5, 0.0);
+    vec3 cloud = mix(vec3(0.62, 0.66, 0.74), vec3(1.28, 1.24, 1.16), lit);
+    col = mix(col, cloud, cover * 0.88);
+  }
   return col;
+}
+
+/**
+ * The standard outdoor triple: sun, sky, bounce. "ao" attenuates the two
+ * ambient terms but never the sun — occlusion darkens what the sky can reach,
+ * not what is already in direct sunlight.
+ */
+vec3 daylight(vec3 albedo, vec3 n, float ao){
+  float ndl = max(dot(n, uSunDir), 0.0);
+  float sky = 0.5 + 0.5 * n.y;
+  float bounce = 0.5 - 0.5 * n.y;
+  vec3 lit = albedo * uSunColor * ndl * 1.55;
+  lit += albedo * uSkyHorizon * sky * 0.62 * ao;
+  lit += albedo * uGroundTint * bounce * 0.34 * ao;
+  return lit;
 }
 `;
+
+/** Sky depends on the noise helpers, so the two always travel together. */
+const COMMON_GLSL = `${NOISE_GLSL}\n${SKY_GLSL}`;
 
 export interface SkyUniforms {
   uSkyTop: { value: Color };
   uSkyHorizon: { value: Color };
   uSunColor: { value: Color };
   uSunDir: { value: Vector3 };
+  uGroundTint: { value: Color };
 }
 
 export function makeSkyUniforms(def: TrackDef): SkyUniforms {
@@ -104,9 +134,31 @@ export function makeSkyUniforms(def: TrackDef): SkyUniforms {
     uSkyTop: { value: new Color(def.skyTop) },
     uSkyHorizon: { value: new Color(def.skyHorizon) },
     uSunColor: { value: new Color(def.sunColor) },
-    uSunDir: { value: new Vector3(-0.34, 0.1, -0.93).normalize() },
+    uSunDir: { value: new Vector3(def.sunX, def.sunY, def.sunZ).normalize() },
+    uGroundTint: { value: new Color(def.groundTint) },
   };
 }
+
+function shared(sky: SkyUniforms) {
+  return { ...(sky as never as Record<string, { value: unknown }>) };
+}
+
+function fogUniforms(def: TrackDef) {
+  return {
+    uFogColor: { value: new Color(def.fogColor) },
+    uFogDensity: { value: def.fogDensity },
+  };
+}
+
+/** Aerial perspective: distant things go pale and blue, they do not go dark. */
+const FOG_GLSL = /* glsl */ `
+uniform vec3 uFogColor;
+uniform float uFogDensity;
+vec3 applyFog(vec3 col, float depth){
+  float f = 1.0 - exp(-pow(depth * uFogDensity, 1.7));
+  return mix(col, uFogColor, clamp(f, 0.0, 1.0));
+}
+`;
 
 // ---------------------------------------------------------------------------
 // Sky dome
@@ -114,7 +166,7 @@ export function makeSkyUniforms(def: TrackDef): SkyUniforms {
 
 export function makeSkyMaterial(sky: SkyUniforms): ShaderMaterial {
   return new ShaderMaterial({
-    uniforms: sky as never,
+    uniforms: { ...shared(sky), uTime: { value: 0 } },
     side: BackSide,
     depthWrite: false,
     fog: false,
@@ -129,12 +181,12 @@ export function makeSkyMaterial(sky: SkyUniforms): ShaderMaterial {
       }
     `,
     fragmentShader: /* glsl */ `
-      ${NOISE_GLSL}
-      ${SKY_GLSL}
+      ${COMMON_GLSL}
+      uniform float uTime;
       varying vec3 vDir;
       void main(){
         vec3 d = normalize(vDir);
-        gl_FragColor = vec4(skyBase(d) + skyDetail(d), 1.0);
+        gl_FragColor = vec4(skyBase(d) + skyDetail(d, uTime), 1.0);
       }
     `,
   });
@@ -150,28 +202,25 @@ export function makeSkyMaterial(sky: SkyUniforms): ShaderMaterial {
  * which of seven surface treatments each triangle gets — so sixteen visually
  * distinct cars cost exactly one draw call.
  */
-export function makeCarMaterial(sky: SkyUniforms): ShaderMaterial {
-  const m = new ShaderMaterial({
-    uniforms: {
-      ...(sky as never as Record<string, { value: unknown }>),
-      uTime: { value: 0 },
-      uFogColor: { value: new Color(0x120a1c) },
-      uFogDensity: { value: 0.0016 },
-    },
+export function makeCarMaterial(sky: SkyUniforms, def: TrackDef): ShaderMaterial {
+  return new ShaderMaterial({
+    uniforms: { ...shared(sky), ...fogUniforms(def), uTime: { value: 0 } },
     vertexShader: /* glsl */ `
       attribute float paint;
       varying float vPaint;
       varying vec3 vNormalW;
       varying vec3 vWorld;
+      varying vec3 vLocal;
       varying vec3 vLivery;
       varying float vDepth;
 
       void main(){
         vPaint = paint;
+        vLocal = position;
         #ifdef USE_INSTANCING_COLOR
           vLivery = instanceColor;
         #else
-          vLivery = vec3(0.8);
+          vLivery = vec3(0.75, 0.1, 0.12);
         #endif
 
         mat4 model = modelMatrix;
@@ -189,15 +238,14 @@ export function makeCarMaterial(sky: SkyUniforms): ShaderMaterial {
       }
     `,
     fragmentShader: /* glsl */ `
-      ${NOISE_GLSL}
-      ${SKY_GLSL}
-      uniform vec3 uFogColor;
-      uniform float uFogDensity;
+      ${COMMON_GLSL}
+      ${FOG_GLSL}
       uniform float uTime;
 
       varying float vPaint;
       varying vec3 vNormalW;
       varying vec3 vWorld;
+      varying vec3 vLocal;
       varying vec3 vLivery;
       varying float vDepth;
 
@@ -209,70 +257,56 @@ export function makeCarMaterial(sky: SkyUniforms): ShaderMaterial {
 
         int id = int(vPaint + 0.5);
 
-        vec3 base;
-        float rough, reflectivity, metal;
+        vec3 albedo;
+        float rough, reflectivity;
         vec3 emissive = vec3(0.0);
+        // Bodywork sits low; the closer to the floor, the less sky reaches it.
+        float ao = clamp(0.45 + vLocal.y * 0.80, 0.38, 1.0);
 
         if (id == 1) {                      // livery paint
-          base = vLivery;
-          rough = 0.20; reflectivity = 0.55; metal = 0.25;
-        } else if (id == 2) {               // accent — a lifted, hotter livery
-          base = clamp(vLivery * 1.5 + 0.32, 0.0, 4.0);
-          rough = 0.28; reflectivity = 0.42; metal = 0.15;
-          emissive = base * 0.16;
+          albedo = vLivery;
+          rough = 0.13; reflectivity = 0.32;
+        } else if (id == 2) {               // accent stripe
+          albedo = clamp(vLivery * 1.30 + 0.30, 0.0, 1.0);
+          rough = 0.19; reflectivity = 0.27;
         } else if (id == 3) {               // titanium halo, rims, roll hoop
-          base = vec3(0.62, 0.65, 0.70);
-          rough = 0.18; reflectivity = 0.85; metal = 0.95;
+          albedo = vec3(0.52, 0.545, 0.58);
+          rough = 0.22; reflectivity = 0.60;
         } else if (id == 4) {               // tyre rubber
-          float tread = fbm(vWorld.xz * 26.0) * 0.06;
-          base = vec3(0.052, 0.055, 0.062) + tread;
-          rough = 0.95; reflectivity = 0.04; metal = 0.0;
-        } else if (id == 5) {               // brake glow / rain light
-          base = vec3(0.25, 0.03, 0.01);
-          rough = 0.6; reflectivity = 0.1; metal = 0.0;
-          emissive = vec3(1.6, 0.30, 0.06);
-        } else if (id == 6) {               // visor + mirror glass
-          base = vec3(0.02, 0.025, 0.035);
-          rough = 0.04; reflectivity = 1.0; metal = 0.7;
+          float tread = fbm(vWorld.xz * 30.0) * 0.035;
+          albedo = vec3(0.048, 0.049, 0.053) + tread;
+          rough = 0.92; reflectivity = 0.03;
+        } else if (id == 5) {               // brake disc / rain light
+          albedo = vec3(0.18, 0.17, 0.17);
+          rough = 0.70; reflectivity = 0.06;
+          emissive = vec3(0.26, 0.04, 0.008);
+        } else if (id == 6) {               // visor and mirror glass
+          albedo = vec3(0.03, 0.035, 0.045);
+          rough = 0.05; reflectivity = 0.85;
         } else {                            // bare carbon fibre
-          // A real 2x2 twill reads as a fine diagonal checker.
-          vec2 w = vWorld.xz * 150.0;
+          // A 2x2 twill reads as a fine diagonal checker at close range.
+          vec2 w = vWorld.xz * 170.0;
           float weave = step(0.5, fract(floor(w.x) * 0.5 + floor(w.y) * 0.5));
-          base = mix(vec3(0.030, 0.032, 0.038), vec3(0.062, 0.065, 0.074), weave);
-          rough = 0.34; reflectivity = 0.30; metal = 0.35;
+          albedo = mix(vec3(0.035, 0.037, 0.042), vec3(0.070, 0.073, 0.080), weave);
+          rough = 0.30; reflectivity = 0.22;
         }
 
-        // Key light, plus a cool fill from straight up so the underside is not
-        // a black hole, plus a rim in the livery colour to separate the car
-        // from the night.
-        float ndl = max(dot(N, uSunDir), 0.0);
-        float fill = 0.5 + 0.5 * N.y;
-        float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);
+        vec3 col = daylight(albedo, N, ao);
 
-        vec3 env = skyBase(R);
-        vec3 diffuse = base * (uSunColor * ndl * 1.3 + uSkyHorizon * fill * 1.5
-                               + uSkyTop * 0.55 + 0.10);
+        // Clearcoat: a sky reflection lifted at grazing angles, plus a tight
+        // sun highlight. This is what separates painted bodywork from plastic.
+        float fres = reflectivity + (1.0 - reflectivity) * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+        col = mix(col, skyBase(R) * ao, fres * (1.0 - rough * 0.55));
 
-        // Specular: sun highlight tightened by roughness, over sky reflection.
-        float spec = pow(max(dot(R, uSunDir), 0.0), mix(220.0, 8.0, rough));
-        vec3 specular = uSunColor * spec * (1.0 - rough) * 2.4;
+        vec3 H = normalize(uSunDir + V);
+        float spec = pow(max(dot(N, H), 0.0), mix(320.0, 12.0, rough));
+        col += uSunColor * spec * (1.0 - rough) * 1.9;
 
-        vec3 col = mix(diffuse, env * mix(vec3(1.0), base, metal), reflectivity * (0.45 + 0.55 * fres));
-        col += specular;
-        // Rim light in the driver's own colour — the single cheapest thing that
-        // separates sixteen dark cars from a dark circuit.
-        col += vLivery * fres * 0.55;
         col += emissive;
-
-        // Exponential-squared fog, matched to the scene fog.
-        float f = 1.0 - exp(-pow(vDepth * uFogDensity, 2.0));
-        col = mix(col, uFogColor, clamp(f, 0.0, 1.0));
-
-        gl_FragColor = vec4(col, 1.0);
+        gl_FragColor = vec4(applyFog(col, vDepth), 1.0);
       }
     `,
   });
-  return m;
 }
 
 // ---------------------------------------------------------------------------
@@ -281,17 +315,16 @@ export function makeCarMaterial(sky: SkyUniforms): ShaderMaterial {
 
 /**
  * Attributes: `aU` lateral -1..1, `aV` metres along the lap, `aCorner` 0..1.
- * Draws asphalt, white edge lines, rubbered-in racing line, sector markers and
- * the start/finish grid in one pass.
+ * Asphalt, white edge lines, the rubbered-in racing line, sector markers and
+ * the start/finish grid, in one pass.
  */
 export function makeRoadMaterial(sky: SkyUniforms, def: TrackDef, lapLength: number) {
   return new ShaderMaterial({
     uniforms: {
-      ...(sky as never as Record<string, { value: unknown }>),
+      ...shared(sky),
+      ...fogUniforms(def),
       uAccent: { value: new Color(def.accent) },
       uAccent2: { value: new Color(def.accent2) },
-      uFogColor: { value: new Color(def.fogColor) },
-      uFogDensity: { value: def.fogDensity },
       uLapLength: { value: lapLength },
       uMarkerLen: { value: lapLength / Math.round(lapLength / 50) },
       uTime: { value: 0 },
@@ -317,12 +350,10 @@ export function makeRoadMaterial(sky: SkyUniforms, def: TrackDef, lapLength: num
       }
     `,
     fragmentShader: /* glsl */ `
-      ${NOISE_GLSL}
-      ${SKY_GLSL}
+      ${COMMON_GLSL}
+      ${FOG_GLSL}
       uniform vec3 uAccent;
       uniform vec3 uAccent2;
-      uniform vec3 uFogColor;
-      uniform float uFogDensity;
       uniform float uLapLength;
       uniform float uMarkerLen;
       varying float vU;
@@ -336,74 +367,66 @@ export function makeRoadMaterial(sky: SkyUniforms, def: TrackDef, lapLength: num
         float au = abs(vU);
 
         // Asphalt: coarse aggregate plus a finer grain, both in world space so
-        // the texture never stretches through corners.
-        float grain = fbm(vWorld.xz * 1.7) * 0.5 + fbm(vWorld.xz * 11.0) * 0.5;
-        vec3 col = mix(vec3(0.098, 0.102, 0.120), vec3(0.196, 0.201, 0.228), grain);
+        // the texture never stretches through a corner.
+        float coarse = fbm(vWorld.xz * 1.6);
+        float fine = fbm(vWorld.xz * 13.0);
+        vec3 albedo = mix(vec3(0.150, 0.153, 0.163), vec3(0.243, 0.246, 0.258),
+                          coarse * 0.65 + fine * 0.35);
 
-        // Rubbered-in racing line: two darker bands either side of centre.
-        float rubber = smoothstep(0.62, 0.16, au) * (0.35 + 0.4 * vCorner);
-        col = mix(col, vec3(0.046, 0.045, 0.052), rubber);
+        // Surface-repair seams: strips of newer, darker asphalt.
+        float seam = smoothstep(0.84, 0.93, fbm(vWorld.xz * 0.26));
+        albedo = mix(albedo, albedo * 0.80, seam * 0.6);
 
-        // Old surface-repair seams.
-        float seam = smoothstep(0.86, 0.94, fbm(vWorld.xz * 0.30));
-        col = mix(col, col * 1.35, seam * 0.5);
+        // Rubbered-in racing line, widest and darkest through the corners.
+        float rubber = smoothstep(0.70, 0.12, au) * (0.30 + 0.45 * vCorner);
+        albedo = mix(albedo, vec3(0.088, 0.086, 0.090), rubber);
 
         // White edge lines.
-        float line = smoothstep(0.885, 0.90, au) * (1.0 - smoothstep(0.945, 0.960, au));
-        col = mix(col, vec3(1.05, 1.07, 1.14), line);
+        float line = smoothstep(0.888, 0.902, au) * (1.0 - smoothstep(0.948, 0.962, au));
+        albedo = mix(albedo, vec3(0.80, 0.80, 0.78), line);
 
-        // 50 m distance markers just inside the line, tinted by sector.
+        // 50 m boards just inside the line, tinted by sector.
         float sector = floor(vV / (uLapLength / 3.0));
-        vec3 sectorCol = sector < 1.0 ? uAccent : (sector < 2.0 ? uAccent2 : vec3(1.0, 0.85, 0.2));
-        float tick = step(0.94, fract(vV / uMarkerLen)) * smoothstep(0.80, 0.83, au) * (1.0 - smoothstep(0.875, 0.885, au));
-        col = mix(col, sectorCol * 1.4, tick);
+        vec3 sectorCol = sector < 1.0 ? uAccent : (sector < 2.0 ? uAccent2 : vec3(0.95, 0.80, 0.15));
+        float tick = step(0.94, fract(vV / uMarkerLen))
+                   * smoothstep(0.80, 0.83, au) * (1.0 - smoothstep(0.873, 0.885, au));
+        albedo = mix(albedo, sectorCol * 0.75, tick);
 
         // Start/finish: a checkered band across the full width.
-        float sLine = smoothstep(6.0, 4.0, abs(mod(vV + uLapLength * 0.5, uLapLength) - uLapLength * 0.5));
-        float checker = step(0.5, fract(vU * 5.0)) == step(0.5, fract(vV * 0.5)) ? 0.06 : 0.82;
-        col = mix(col, vec3(checker), sLine);
+        float sLine = smoothstep(6.0, 4.0,
+          abs(mod(vV + uLapLength * 0.5, uLapLength) - uLapLength * 0.5));
+        float checker = step(0.5, fract(vU * 5.0)) == step(0.5, fract(vV * 0.5)) ? 0.055 : 0.78;
+        albedo = mix(albedo, vec3(checker), sLine);
 
-        // Lighting: asphalt is rough, so it is mostly a diffuse response to the
-        // sky plus a wide grazing sheen that hints at damp tarmac.
         vec3 N = normalize(vNormalW);
-        vec3 V = normalize(cameraPosition - vWorld);
-        vec3 R = reflect(-V, N);
-        float ndl = max(dot(N, uSunDir), 0.0);
-        float graze = pow(1.0 - max(dot(N, V), 0.0), 5.0);
-        // Ambient comes from the sky itself, so a circuit set at dusk lights
-        // its own tarmac differently from one set at midnight.
-        vec3 ambient = uSkyHorizon * 2.4 + uSkyTop * 0.9 + 0.115;
-        vec3 lit = col * (uSunColor * ndl * 0.7 + ambient);
-        lit += skyBase(R) * graze * 0.75;
-        // Neon spill from the kerbs and barriers onto the outer racing surface.
-        lit += sectorCol * smoothstep(0.45, 1.0, au) * 0.085;
-        lit += uAccent2 * smoothstep(0.75, 1.0, au) * 0.05;
+        vec3 col = daylight(albedo, N, 1.0);
 
-        float f = 1.0 - exp(-pow(vDepth * uFogDensity, 2.0));
-        lit = mix(lit, uFogColor, clamp(f, 0.0, 1.0));
-        gl_FragColor = vec4(lit, 1.0);
+        // Broad grazing sheen. Asphalt is rough, so this is a wide haze rather
+        // than a mirror, and it is what sells hot tarmac in direct sun.
+        vec3 V = normalize(cameraPosition - vWorld);
+        float graze = pow(1.0 - max(dot(N, V), 0.0), 5.0);
+        col += skyBase(reflect(-V, N)) * graze * 0.22;
+
+        gl_FragColor = vec4(applyFog(col, vDepth), 1.0);
       }
     `,
   });
 }
 
-/** Run-off apron: the same asphalt idea, flatter and drained of colour. */
+/** Run-off: paler asphalt apron, painted through the corners. */
 export function makeRunoffMaterial(sky: SkyUniforms, def: TrackDef) {
   return new ShaderMaterial({
-    uniforms: {
-      ...(sky as never as Record<string, { value: unknown }>),
-      uAccent: { value: new Color(def.accent) },
-      uFogColor: { value: new Color(def.fogColor) },
-      uFogDensity: { value: def.fogDensity },
-    },
+    uniforms: { ...shared(sky), ...fogUniforms(def), uAccent: { value: new Color(def.accent) } },
     vertexShader: /* glsl */ `
       attribute float aU;
+      attribute float aCorner;
       varying float vU;
+      varying float vCorner;
       varying vec3 vWorld;
       varying vec3 vNormalW;
       varying float vDepth;
       void main(){
-        vU = aU;
+        vU = aU; vCorner = aCorner;
         vec4 world = modelMatrix * vec4(position, 1.0);
         vWorld = world.xyz;
         vNormalW = normalize(mat3(modelMatrix) * normal);
@@ -413,102 +436,97 @@ export function makeRunoffMaterial(sky: SkyUniforms, def: TrackDef) {
       }
     `,
     fragmentShader: /* glsl */ `
-      ${NOISE_GLSL}
-      ${SKY_GLSL}
+      ${COMMON_GLSL}
+      ${FOG_GLSL}
       uniform vec3 uAccent;
-      uniform vec3 uFogColor;
-      uniform float uFogDensity;
       varying float vU;
+      varying float vCorner;
       varying vec3 vWorld;
       varying vec3 vNormalW;
       varying float vDepth;
       void main(){
         float au = abs(vU);
-        float grain = fbm(vWorld.xz * 2.4) * 0.6 + fbm(vWorld.xz * 9.0) * 0.4;
+        float grain = fbm(vWorld.xz * 2.2) * 0.6 + fbm(vWorld.xz * 10.0) * 0.4;
 
-        // Painted run-off: accent-tinted asphalt fading to bare gravel.
-        vec3 painted = mix(vec3(0.070, 0.064, 0.080), uAccent * 0.13, 0.45);
-        vec3 gravel  = mix(vec3(0.050, 0.053, 0.059), vec3(0.096, 0.093, 0.091), grain);
-        vec3 col = mix(painted, gravel, smoothstep(0.25, 0.72, au));
+        // Paler and older than the racing surface.
+        vec3 albedo = mix(vec3(0.196, 0.198, 0.205), vec3(0.278, 0.278, 0.282), grain);
 
-        // Diagonal hatching over the painted zone.
-        float hatch = step(0.55, fract((vWorld.x + vWorld.z) * 0.42));
-        col = mix(col, col * 1.5, hatch * (1.0 - smoothstep(0.18, 0.5, au)) * 0.5);
-        col *= 0.75 + grain * 0.5;
+        // Painted run-off through the corners only, as at a modern circuit.
+        float paint = smoothstep(0.30, 0.62, vCorner) * (1.0 - smoothstep(0.30, 0.85, au));
+        float stripe = step(0.5, fract((vWorld.x + vWorld.z) * 0.06));
+        vec3 painted = mix(uAccent * 0.42, vec3(0.62, 0.62, 0.60), stripe);
+        albedo = mix(albedo, painted, paint * 0.72);
 
-        vec3 N = normalize(vNormalW);
-        float ndl = max(dot(N, uSunDir), 0.0);
-        vec3 lit = col * (uSunColor * ndl * 0.45 + uSkyHorizon * 1.6 + uSkyTop * 0.6 + 0.075);
+        // White boundary line where the run-off begins.
+        albedo = mix(albedo, vec3(0.74, 0.74, 0.72), smoothstep(0.10, 0.04, au));
+        albedo *= 0.88 + grain * 0.24;
 
-        float f = 1.0 - exp(-pow(vDepth * uFogDensity, 2.0));
-        lit = mix(lit, uFogColor, clamp(f, 0.0, 1.0));
-        gl_FragColor = vec4(lit, 1.0);
+        vec3 col = daylight(albedo, normalize(vNormalW), 1.0);
+        gl_FragColor = vec4(applyFog(col, vDepth), 1.0);
       }
     `,
   });
 }
 
-/** Kerbs. Unlit and deliberately over-bright so the bloom pass catches them. */
-export function makeKerbMaterial(def: TrackDef) {
+/** Kerbs: painted concrete, red and white, lit like everything else. */
+export function makeKerbMaterial(sky: SkyUniforms, def: TrackDef) {
   return new ShaderMaterial({
-    uniforms: {
-      uAccent: { value: new Color(def.accent) },
-      uFogColor: { value: new Color(def.fogColor) },
-      uFogDensity: { value: def.fogDensity },
-      uKerbPitch: { value: 3.2 },
-      uTime: { value: 0 },
-    },
+    uniforms: { ...shared(sky), ...fogUniforms(def), uKerbPitch: { value: 3.2 } },
     vertexShader: /* glsl */ `
       attribute float aU;
       attribute float aV;
       varying float vU;
       varying float vV;
+      varying vec3 vNormalW;
+      varying vec3 vWorld;
       varying float vDepth;
       void main(){
         vU = aU; vV = aV;
-        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vec4 world = modelMatrix * vec4(position, 1.0);
+        vWorld = world.xyz;
+        vNormalW = normalize(mat3(modelMatrix) * normal);
+        vec4 mv = viewMatrix * world;
         vDepth = -mv.z;
         gl_Position = projectionMatrix * mv;
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform vec3 uAccent;
-      uniform vec3 uFogColor;
-      uniform float uFogDensity;
+      ${COMMON_GLSL}
+      ${FOG_GLSL}
       uniform float uKerbPitch;
-      uniform float uTime;
       varying float vU;
       varying float vV;
+      varying vec3 vNormalW;
+      varying vec3 vWorld;
       varying float vDepth;
       void main(){
-        // Alternating 1.6 m blocks, the standard FIA kerb pitch.
+        // Alternating 1.6 m blocks: the standard FIA kerb pitch.
         float blk = step(0.5, fract(vV / uKerbPitch));
-        vec3 col = mix(vec3(1.05, 1.06, 1.12), uAccent * 1.35, blk);
-        // Darken the inner edge so the kerb reads as raised, not painted on.
-        col *= 0.45 + 0.55 * smoothstep(0.0, 0.55, vU);
-        // Slow pulse along the lap — subtle, but it makes the circuit feel live.
-        col *= 1.0 + 0.10 * sin(vV * 0.06 - uTime * 2.2);
+        vec3 albedo = mix(vec3(0.74, 0.73, 0.70), vec3(0.62, 0.075, 0.085), blk);
 
-        float f = 1.0 - exp(-pow(vDepth * uFogDensity, 2.0));
-        col = mix(col, uFogColor, clamp(f, 0.0, 1.0) * 0.85);
-        gl_FragColor = vec4(col, 1.0);
+        // Worn, scrubbed paint and dirt in the joints.
+        albedo *= 0.82 + fbm(vWorld.xz * 5.0) * 0.34;
+        float joint = smoothstep(0.06, 0.0, abs(fract(vV / uKerbPitch) - 0.5) - 0.46);
+        albedo *= 1.0 - joint * 0.35;
+
+        // The outer lip sees less sky than the inner face.
+        float ao = 0.55 + 0.45 * smoothstep(0.0, 0.6, vU);
+        gl_FragColor = vec4(applyFog(daylight(albedo, normalize(vNormalW), ao), vDepth), 1.0);
       }
     `,
   });
 }
 
-/** Continuous barrier wall with a neon capping strip. */
+/** Barrier: concrete wall with a red band and sponsor panels. */
 export function makeBarrierMaterial(sky: SkyUniforms, def: TrackDef) {
   return new ShaderMaterial({
     uniforms: {
-      ...(sky as never as Record<string, { value: unknown }>),
+      ...shared(sky),
+      ...fogUniforms(def),
       uAccent: { value: new Color(def.accent) },
       uAccent2: { value: new Color(def.accent2) },
-      uFogColor: { value: new Color(def.fogColor) },
-      uFogDensity: { value: def.fogDensity },
       uSegLen: { value: 45 },
       uPanelLen: { value: 3 },
-      uTime: { value: 0 },
     },
     side: DoubleSide,
     vertexShader: /* glsl */ `
@@ -530,15 +548,12 @@ export function makeBarrierMaterial(sky: SkyUniforms, def: TrackDef) {
       }
     `,
     fragmentShader: /* glsl */ `
-      ${NOISE_GLSL}
-      ${SKY_GLSL}
+      ${COMMON_GLSL}
+      ${FOG_GLSL}
       uniform vec3 uAccent;
       uniform vec3 uAccent2;
-      uniform vec3 uFogColor;
-      uniform float uFogDensity;
       uniform float uSegLen;
       uniform float uPanelLen;
-      uniform float uTime;
       varying float vH;
       varying float vV;
       varying vec3 vNormalW;
@@ -546,49 +561,34 @@ export function makeBarrierMaterial(sky: SkyUniforms, def: TrackDef) {
       varying float vDepth;
 
       void main(){
-        // Alternate the neon colour every 45 m so long straights read as
-        // moving even when the geometry is dead straight.
+        // Concrete, cast in sections with a joint every few metres.
+        float grime = fbm(vWorld.xz * 0.9) * 0.5 + fbm(vWorld.xz * 6.0) * 0.5;
+        vec3 albedo = mix(vec3(0.60, 0.60, 0.585), vec3(0.72, 0.72, 0.705), grime);
+        float joint = smoothstep(0.03, 0.0, abs(fract(vV / uPanelLen) - 0.5) - 0.47);
+        albedo *= 1.0 - joint * 0.42;
+
+        // Track grime kicked up along the base.
+        albedo *= mix(0.62, 1.0, smoothstep(0.0, 0.42, vH));
+
+        // A red band along the top edge, as on real barrier and pit walls.
+        albedo = mix(albedo, vec3(0.58, 0.085, 0.09), smoothstep(0.80, 0.845, vH));
+
+        // Sponsor panels below it, alternating along the lap.
         float seg = floor(vV / uSegLen);
-        vec3 neon = mix(uAccent, uAccent2, step(0.5, fract(seg * 0.5)));
+        vec3 brand = mix(uAccent, uAccent2, step(0.5, fract(seg * 0.5)));
+        float panel = smoothstep(0.24, 0.29, vH) * (1.0 - smoothstep(0.70, 0.76, vH));
+        albedo = mix(albedo, brand * 0.55 + 0.06, panel * 0.82);
 
-        // Panel base: dark, with a seam every 3 m.
-        float seam = smoothstep(0.02, 0.0, abs(fract(vV / uPanelLen) - 0.5) - 0.47);
-        vec3 col = mix(vec3(0.035, 0.036, 0.044), vec3(0.012, 0.012, 0.016), seam);
-        col *= 0.35 + 0.65 * vH;             // ambient occlusion toward the base
-
-        // Neon capping strip along the top edge.
-        float strip = smoothstep(0.80, 0.86, vH) * (1.0 - smoothstep(0.965, 1.0, vH));
-        col += neon * strip * 2.6;
-
-        // Its spill onto the panel below.
-        col += neon * smoothstep(0.80, 0.20, vH) * 0.16;
-
-        // Chevron hazard marks low on the wall.
-        float chev = step(0.5, fract(vV / uPanelLen + vH * 1.2));
-        col = mix(col, mix(col, neon * 0.5, 0.45), chev * smoothstep(0.34, 0.12, vH));
-
-        vec3 N = normalize(vNormalW);
-        float ndl = max(dot(N, uSunDir), 0.0);
-        col *= 0.55 + 0.45 * ndl;
-        col += uSkyHorizon * 0.22 + uSkyTop * 0.1;
-
-        float f = 1.0 - exp(-pow(vDepth * uFogDensity, 2.0));
-        col = mix(col, uFogColor, clamp(f, 0.0, 1.0));
-        gl_FragColor = vec4(col, 1.0);
+        gl_FragColor = vec4(applyFog(daylight(albedo, normalize(vNormalW), 0.85), vDepth), 1.0);
       }
     `,
   });
 }
 
-/** Everything beyond the barriers: ground plane with a fading survey grid. */
+/** Everything beyond the barriers: mown grass. */
 export function makeGroundMaterial(sky: SkyUniforms, def: TrackDef) {
   return new ShaderMaterial({
-    uniforms: {
-      ...(sky as never as Record<string, { value: unknown }>),
-      uAccent: { value: new Color(def.accent) },
-      uFogColor: { value: new Color(def.fogColor) },
-      uFogDensity: { value: def.fogDensity },
-    },
+    uniforms: { ...shared(sky), ...fogUniforms(def) },
     vertexShader: /* glsl */ `
       varying vec3 vWorld;
       varying float vDepth;
@@ -601,50 +601,45 @@ export function makeGroundMaterial(sky: SkyUniforms, def: TrackDef) {
       }
     `,
     fragmentShader: /* glsl */ `
-      ${NOISE_GLSL}
-      ${SKY_GLSL}
-      uniform vec3 uAccent;
-      uniform vec3 uFogColor;
-      uniform float uFogDensity;
+      ${COMMON_GLSL}
+      ${FOG_GLSL}
       varying vec3 vWorld;
       varying float vDepth;
 
       void main(){
-        float n = fbm(vWorld.xz * 0.05);
-        vec3 col = mix(vec3(0.024, 0.027, 0.036), vec3(0.045, 0.042, 0.060), n);
+        // Grass: broad patchiness plus a fine blade-scale break-up.
+        float clump = fbm(vWorld.xz * 0.045);
+        float blades = fbm(vWorld.xz * 1.4);
+        vec3 albedo = mix(vec3(0.075, 0.145, 0.055), vec3(0.135, 0.235, 0.085), clump);
+        albedo = mix(albedo, albedo * 1.18, blades);
 
-        // Survey grid, thinning out with distance so it never aliases.
-        vec2 g = abs(fract(vWorld.xz / 20.0 - 0.5) - 0.5) / fwidth(vWorld.xz / 20.0);
-        float grid = 1.0 - min(min(g.x, g.y), 1.0);
-        col += uAccent * grid * 0.10 * exp(-vDepth * 0.0022);
+        // Mown stripes: the give-away that grass is maintained.
+        float mow = step(0.5, fract(vWorld.x / 26.0 + clump * 0.3));
+        albedo *= mix(0.90, 1.12, mow);
 
-        col += uSkyHorizon * 0.55;
+        // Dry, sandy ground showing through.
+        albedo = mix(albedo, vec3(0.30, 0.27, 0.18), smoothstep(0.72, 0.92, clump) * 0.45);
 
-        float f = 1.0 - exp(-pow(vDepth * uFogDensity, 2.0));
-        col = mix(col, uFogColor, clamp(f, 0.0, 1.0));
-        gl_FragColor = vec4(col, 1.0);
+        gl_FragColor = vec4(applyFog(daylight(albedo, vec3(0.0, 1.0, 0.0), 1.0), vDepth), 1.0);
       }
     `,
   });
 }
 
-/** Trackside light pylons and grandstand faces — instanced, emissive. */
+/** Grandstands, hoardings, floodlights and the gantry. */
 export function makePropMaterial(sky: SkyUniforms, def: TrackDef) {
   return new ShaderMaterial({
-    uniforms: {
-      ...(sky as never as Record<string, { value: unknown }>),
-      uFogColor: { value: new Color(def.fogColor) },
-      uFogDensity: { value: def.fogDensity },
-      uTime: { value: 0 },
-    },
+    uniforms: { ...shared(sky), ...fogUniforms(def) },
     vertexShader: /* glsl */ `
       attribute float aGlow;
       varying float vGlow;
       varying vec3 vTint;
       varying vec3 vNormalW;
+      varying vec3 vLocal;
       varying float vDepth;
       void main(){
         vGlow = aGlow;
+        vLocal = position;
         #ifdef USE_INSTANCING_COLOR
           vTint = instanceColor;
         #else
@@ -662,35 +657,37 @@ export function makePropMaterial(sky: SkyUniforms, def: TrackDef) {
       }
     `,
     fragmentShader: /* glsl */ `
-      ${NOISE_GLSL}
-      ${SKY_GLSL}
-      uniform vec3 uFogColor;
-      uniform float uFogDensity;
+      ${COMMON_GLSL}
+      ${FOG_GLSL}
       varying float vGlow;
       varying vec3 vTint;
       varying vec3 vNormalW;
+      varying vec3 vLocal;
       varying float vDepth;
       void main(){
-        vec3 N = normalize(vNormalW);
-        float ndl = max(dot(N, uSunDir), 0.0);
-        vec3 body = vec3(0.030, 0.032, 0.040) * (0.4 + 0.6 * ndl) + uSkyHorizon * 0.22;
-        vec3 col = mix(body, vTint * 1.75, vGlow);
-        float f = 1.0 - exp(-pow(vDepth * uFogDensity, 2.0));
-        col = mix(col, uFogColor, clamp(f, 0.0, 1.0));
-        gl_FragColor = vec4(col, 1.0);
+        // aGlow selects the "branded" surface: a grandstand's seating, a
+        // hoarding's face, a floodlight's housing.
+        vec3 structure = vec3(0.52, 0.53, 0.55);
+        vec3 albedo = mix(structure, clamp(vTint, 0.0, 1.0) * 0.85 + 0.05, vGlow);
+        // A crowd reads as fine noise, not as flat colour.
+        albedo = mix(albedo, albedo * (0.72 + fbm(vLocal.xz * 3.0) * 0.7), vGlow * 0.6);
+
+        gl_FragColor = vec4(applyFog(daylight(albedo, normalize(vNormalW), 0.8), vDepth), 1.0);
       }
     `,
   });
 }
 
-/** Soft contact shadow blob under each car. Multiplicative, so it darkens. */
+/**
+ * Contact shadow under each car. Multiplicative, hardest directly beneath the
+ * floor — which is where a real ground-effect car's shadow is darkest.
+ */
 export function makeShadowMaterial() {
   return new ShaderMaterial({
     transparent: true,
     depthWrite: false,
     blending: MultiplyBlending,
-    // MultiplyBlending in three uses (ZERO, SRC_COLOR), which is only correct
-    // for premultiplied output — the shader below writes exactly that.
+    // MultiplyBlending uses (ZERO, SRC_COLOR), which needs premultiplied output.
     premultipliedAlpha: true,
     uniforms: {},
     vertexShader: /* glsl */ `
@@ -708,23 +705,27 @@ export function makeShadowMaterial() {
       varying vec2 vUv;
       void main(){
         vec2 d = vUv * 2.0 - 1.0;
-        // Elongated along the car, with a soft edge.
-        float r = length(d * vec2(1.0, 0.62));
-        float a = smoothstep(1.0, 0.15, r);
-        // Multiply blending: 1.0 leaves the frame alone, lower values darken.
-        gl_FragColor = vec4(mix(vec3(1.0), vec3(0.16, 0.16, 0.22), a), 1.0);
+        // A hard core under the floor inside a soft penumbra.
+        float core = 1.0 - smoothstep(0.12, 0.72, length(d * vec2(1.32, 0.70)));
+        float soft = 1.0 - smoothstep(0.0, 1.0, length(d * vec2(0.92, 0.60)));
+        float a = clamp(core * 0.92 + soft * 0.42, 0.0, 1.0);
+        // In direct sun a car's shadow is dark and well defined, and it is the
+        // single strongest cue that the car is sitting on the road rather than
+        // floating above it.
+        gl_FragColor = vec4(mix(vec3(1.0), vec3(0.19, 0.22, 0.28), a), 1.0);
       }
     `,
   });
 }
 
 /** Tyre smoke, dust and sparks. One instanced quad buffer, camera-facing. */
-export function makeParticleMaterial(def: TrackDef) {
+export function makeParticleMaterial(sky: SkyUniforms, def: TrackDef) {
   return new ShaderMaterial({
     transparent: true,
     depthWrite: false,
     blending: AdditiveBlending,
     uniforms: {
+      ...shared(sky),
       uFogColor: { value: new Color(def.fogColor) },
       uSize: { value: new Vector2(1, 1) },
     },
@@ -740,12 +741,12 @@ export function makeParticleMaterial(def: TrackDef) {
         vLife = iData.y; vKind = iData.z; vUv = uv; vTint = iColor;
         // Billboard in view space so the quad always faces the camera.
         vec4 mv = viewMatrix * vec4(iPos, 1.0);
-        float s = iData.x;
-        mv.xy += position.xy * s;
+        mv.xy += position.xy * iData.x;
         gl_Position = projectionMatrix * mv;
       }
     `,
     fragmentShader: /* glsl */ `
+      ${COMMON_GLSL}
       varying float vLife;
       varying float vKind;
       varying vec2 vUv;
@@ -754,12 +755,13 @@ export function makeParticleMaterial(def: TrackDef) {
         vec2 d = vUv * 2.0 - 1.0;
         float r = length(d);
         if (r > 1.0) discard;
-        // Smoke is a soft puff; sparks are a hot core.
         float soft = smoothstep(1.0, 0.0, r);
         float hot  = pow(smoothstep(1.0, 0.0, r), 4.0);
         float shape = mix(soft, hot, vKind);
         float fade = vLife * vLife;
-        gl_FragColor = vec4(vTint * shape * fade * mix(0.55, 3.0, vKind), shape * fade);
+        // Daylight smoke is lit by the sky, not self-luminous.
+        vec3 tint = mix(vTint * (uSkyHorizon * 1.5 + uSunColor * 0.55), vTint, vKind);
+        gl_FragColor = vec4(tint * shape * fade * mix(0.85, 3.0, vKind), shape * fade);
       }
     `,
   });

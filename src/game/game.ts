@@ -43,11 +43,13 @@ interface QualityTier {
   minScale: number;
 }
 
+// Bloom is deliberately restrained: in daylight it is a glint off bodywork and
+// a haze around the sun, not a glow on everything.
 const TIERS: Record<Quality, QualityTier> = {
-  ultra: { maxDpr: 2, bloom: 1, particles: 1, grain: 1, vignette: 1, minScale: 0.72 },
-  high: { maxDpr: 1.75, bloom: 0.9, particles: 0.8, grain: 1, vignette: 1, minScale: 0.62 },
-  balanced: { maxDpr: 1.35, bloom: 0.75, particles: 0.5, grain: 0.6, vignette: 1, minScale: 0.55 },
-  efficient: { maxDpr: 1, bloom: 0, particles: 0.2, grain: 0, vignette: 0.8, minScale: 0.5 },
+  ultra: { maxDpr: 2, bloom: 0.55, particles: 1, grain: 0.8, vignette: 0.7, minScale: 0.72 },
+  high: { maxDpr: 1.75, bloom: 0.5, particles: 0.8, grain: 0.8, vignette: 0.7, minScale: 0.62 },
+  balanced: { maxDpr: 1.35, bloom: 0.4, particles: 0.5, grain: 0.5, vignette: 0.6, minScale: 0.55 },
+  efficient: { maxDpr: 1, bloom: 0, particles: 0.2, grain: 0, vignette: 0.5, minScale: 0.5 },
 };
 
 const SCALE_STEPS = [0.5, 0.58, 0.66, 0.75, 0.85, 0.92, 1];
@@ -245,14 +247,12 @@ export class Game {
 
     this.track = new Track(def);
     this.world = new World(this.track);
-    this.particles = new Particles(def);
+    this.particles = new Particles(this.world.sky, def);
     this.world.scene.add(this.particles.mesh);
 
     // Cars: one instanced body + one instanced wheel buffer for the whole grid.
     this.carMat?.dispose();
-    this.carMat = makeCarMaterial(this.world.sky);
-    this.carMat.uniforms.uFogColor.value = new Color(def.fogColor);
-    this.carMat.uniforms.uFogDensity.value = def.fogDensity;
+    this.carMat = makeCarMaterial(this.world.sky, def);
 
     const bodyGeo = buildF1Body();
     this.bodies = new InstancedMesh(bodyGeo, this.carMat, MAX_CARS);
@@ -522,13 +522,20 @@ export class Game {
     }
   }
 
+  /**
+   * Resize only the offscreen targets. The viewport is deliberately never
+   * touched: three sets it from the bound render target, and leaves it at the
+   * canvas size for the default framebuffer. Pinning it to the scaled size
+   * instead makes the final composite fill only part of the canvas and letterbox
+   * the rest in black — and it only shows up once the scaler actually drops
+   * resolution, which is exactly on the machines it exists to help.
+   */
   private applyScale() {
     const s = SCALE_STEPS[this.scaleIndex] * this.baseDpr;
-    const w = Math.max(2, Math.round(this.cssWidth * s));
-    const h = Math.max(2, Math.round(this.cssHeight * s));
-    this.post.setSize(w, h);
-    this.renderer.setViewport(0, 0, w, h);
-    this.renderer.setScissor(0, 0, w, h);
+    this.post.setSize(
+      Math.max(2, Math.round(this.cssWidth * s)),
+      Math.max(2, Math.round(this.cssHeight * s)),
+    );
   }
 
   resize() {
@@ -536,8 +543,15 @@ export class Game {
     const h = this.canvas.clientHeight || window.innerHeight;
     this.cssWidth = w;
     this.cssHeight = h;
+    // The canvas backing store is full native resolution; only the scene and
+    // bloom targets shrink. The composite upscales into it, so HUD-adjacent
+    // edges and the tonemap always resolve at the display's real pixel density.
     this.renderer.setPixelRatio(1);
-    this.renderer.setSize(w, h, false);
+    this.renderer.setSize(
+      Math.round(w * this.baseDpr),
+      Math.round(h * this.baseDpr),
+      false,
+    );
     this.cam.setAspect(w / Math.max(1, h));
     this.applyScale();
   }

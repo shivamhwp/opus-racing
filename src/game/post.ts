@@ -108,8 +108,10 @@ export class Post {
       blending: NoBlending,
       uniforms: {
         tSrc: { value: null },
-        uThreshold: { value: 0.85 },
-        uKnee: { value: 0.45 },
+        // Daylight sits near 1.0 across most of the frame, so the knee has to
+        // start above it or the whole scene blooms into mush.
+        uThreshold: { value: 1.02 },
+        uKnee: { value: 0.35 },
       },
       vertexShader: VERT,
       fragmentShader: /* glsl */ `
@@ -241,19 +243,19 @@ export class Post {
             col.b = texture2D(tScene, uv - centred * ca).b;
           }
 
-          vec3 bloom = texture2D(tBloom1, uv).rgb * 0.62
-                     + texture2D(tBloom2, uv).rgb * 0.95;
+          vec3 bloom = texture2D(tBloom1, uv).rgb * 0.55
+                     + texture2D(tBloom2, uv).rgb * 0.80;
           col += bloom * uBloom;
           col += uFlashRGB * uFlash;
 
-          col = aces(col * 1.08);
+          col = aces(col * 0.92);
 
           // Vignette.
-          col *= mix(1.0, smoothstep(1.05, 0.28, r), uVignette);
+          col *= mix(1.0, smoothstep(1.25, 0.34, r), uVignette);
 
           // Grain, slightly stronger in the shadows where banding would show.
           float g = hash12(gl_FragCoord.xy + fract(uTime) * 913.0) - 0.5;
-          col += g * uGrain * 0.028 * (1.0 - 0.6 * dot(col, vec3(0.333)));
+          col += g * uGrain * 0.014 * (1.0 - 0.7 * dot(col, vec3(0.333)));
 
           gl_FragColor = vec4(col, 1.0);
         }

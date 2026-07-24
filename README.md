@@ -41,11 +41,25 @@ throttle-on understeer emerge rather than being scripted. Measured by the test
 suite: 0–100 km/h in 2.29 s, 317 km/h (337 with DRS), 3.0 g average braking over
 104 m, 5.8 g lateral at 300 km/h, 67–79 s lap times.
 
+**Daylight, lit properly.** Every surface uses the same outdoor lighting
+triple: a warm directional sun, a cool hemispherical sky term, and a bounce
+term coming back up off the ground. Circuits run at different times of day —
+clear midday, bright afternoon, golden hour — and because the sky is one
+function, moving the sun re-lights the tarmac, the grass, the barriers and the
+reflections in the bodywork all at once.
+
 **Rendering adapts to your display.** The renderer learns the panel's real
 refresh rate from the 20th percentile of observed frame times, then trades
-resolution in quantised steps to hold it. Post-processing is a bright-pass, a
-two-level separable bloom at 1/4 and 1/8 resolution, and a single composite pass
-doing ACES tonemapping, speed streaks, chromatic aberration, vignette and grain.
+resolution in quantised steps to hold it, compositing back up to the canvas at
+full native density. Post-processing is a bright-pass, a two-level separable
+bloom at 1/4 and 1/8 resolution, and a single composite pass doing ACES
+tonemapping, speed streaks, chromatic aberration, vignette and grain.
+
+**The camera keeps the car centred.** It sits directly behind the car and aims
+along the car's own axis, so the car never leaves the middle of the frame.
+Corner anticipation comes from a small bounded yaw lead rather than from moving
+the aim point onto the track, which is what breaks framing the moment a car
+runs wide.
 
 **The HUD never triggers layout.** It is built once and then mutated. Per-frame
 updates only write `textContent` on leaf nodes or set a CSS custom property that
@@ -93,16 +107,19 @@ devices.
 ## Running it
 
 ```bash
-npm install
-npm run dev          # client only, on http://localhost:5173
+bun install
+bun run dev          # client only, on http://localhost:5173
 
 # full stack, in two terminals:
-npm run dev:rooms    # the Durable Object
-npm run dev:pages    # Pages + Functions, bound to it, on :8799
+bun run dev:rooms    # the Durable Object
+bun run dev:pages    # Pages + Functions, bound to it, on :8799
 ```
 
-`dev:pages` needs a password: add `--binding APP_PASSWORD=letmein`, or put it in
-`.dev.vars`.
+`dev:pages` needs a password: add `--binding APP_PASSWORD=letmein`, or put it
+in `.dev.vars`.
+
+The check scripts import the app's own TypeScript directly — Bun runs it with
+no build step and no loader shims.
 
 ## Tests
 
@@ -113,9 +130,9 @@ racing surface that was invisible because its triangles were wound face-down
 while still reporting 120 fps.
 
 ```bash
-npm run check          # tracks, physics, car model, world geometry
-npm run test:protocol  # race lifecycle + server authority, over real sockets
-npm run test:browser   # two real browsers racing each other
+bun run check          # tracks, physics, car model, world geometry
+bun run test:protocol  # race lifecycle + server authority, over real sockets
+bun run test:browser   # two real browsers racing each other
 ```
 
 `check` runs offline. The other two need a running deployment; point them
@@ -133,9 +150,9 @@ anywhere with `BASE=https://… APP_PASSWORD=…`.
 ## Deploying
 
 ```bash
-npm run deploy:rooms   # the Durable Object worker
-npm run deploy:pages   # build + Pages
-npm run deploy         # both
+bun run deploy:rooms   # the Durable Object worker
+bun run deploy:pages   # build + Pages
+bun run deploy         # both
 ```
 
 Then set the password:
@@ -160,4 +177,4 @@ tests/        browser and protocol tests
 ```
 
 Icons are [Phosphor](https://phosphoricons.com) (MIT), inlined at build time by
-`npm run icons` so nothing is fetched at runtime.
+`bun run icons` so nothing is fetched at runtime.

@@ -70,7 +70,7 @@ body {
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  background: radial-gradient(ellipse at 50% 50%, transparent 52%, rgba(0, 0, 0, 0.45) 100%);
+  background: radial-gradient(ellipse at 50% 50%, transparent 62%, rgba(0, 0, 0, 0.24) 100%);
 }
 
 #ui,
@@ -268,6 +268,15 @@ svg.ph {
   padding: 24px;
   overflow-y: auto;
   animation: screen-in 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  /* The circuit behind the menus is a bright daylight scene, so the copy needs
+     a scrim to stay legible. Weighted toward the upper left, where the heading
+     and blurb sit, so the track stays visible everywhere else. */
+  background: radial-gradient(
+    125% 92% at 28% 34%,
+    rgba(6, 7, 11, 0.74),
+    rgba(6, 7, 11, 0.38) 46%,
+    rgba(6, 7, 11, 0.1) 76%
+  );
 }
 
 @keyframes screen-in {
@@ -289,6 +298,7 @@ svg.ph {
 }
 
 .brand h1 {
+  filter: drop-shadow(0 2px 14px rgba(0, 0, 0, 0.75));
   font-family: var(--mono);
   font-size: clamp(30px, 6vw, 54px);
   font-weight: 700;
@@ -305,16 +315,18 @@ svg.ph {
   font-size: 10px;
   letter-spacing: 0.32em;
   text-transform: uppercase;
-  color: var(--dimmer);
+  color: #9aa0b4;
   padding-bottom: 4px;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9);
 }
 
 .blurb {
-  color: var(--dim);
+  color: #c3c8d6;
   font-size: 13.5px;
   line-height: 1.6;
   margin-bottom: 26px;
   max-width: 62ch;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.85);
 }
 
 .grid2 {
@@ -542,8 +554,9 @@ svg.ph {
 
 .hint {
   font-size: 11.5px;
-  color: var(--dimmer);
+  color: #9198ac;
   line-height: 1.55;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
 }
 
 .kbd {

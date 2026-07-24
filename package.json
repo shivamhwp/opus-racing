@@ -7,19 +7,19 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "check": "npm run check:tracks && npm run check:physics && npm run check:car && npm run check:world",
-    "check:tracks": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/check-tracks.mjs",
-    "check:physics": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/check-physics.mjs",
-    "check:car": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/check-car.mjs",
-    "check:world": "node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/check-world.mjs",
-    "icons": "node scripts/gen-icons.mjs",
-    "test:browser": "node tests/browser.mjs",
-    "test:protocol": "node tests/protocol.mjs",
+    "check": "bun run check:tracks && bun run check:physics && bun run check:car && bun run check:world",
+    "check:tracks": "bun scripts/check-tracks.mjs",
+    "check:physics": "bun scripts/check-physics.mjs",
+    "check:car": "bun scripts/check-car.mjs",
+    "check:world": "bun scripts/check-world.mjs",
+    "icons": "bun scripts/gen-icons.mjs",
+    "test:browser": "bun tests/browser.mjs",
+    "test:protocol": "bun tests/protocol.mjs",
     "dev:rooms": "wrangler dev --config server/wrangler.toml --port 8798",
     "dev:pages": "wrangler pages dev --port 8799 --do RACE_ROOM=RaceRoom@opus-racing-rooms",
     "deploy:rooms": "wrangler deploy --config server/wrangler.toml",
-    "deploy:pages": "npm run build && wrangler pages deploy",
-    "deploy": "npm run deploy:rooms && npm run deploy:pages"
+    "deploy:pages": "bun run build && wrangler pages deploy",
+    "deploy": "bun run deploy:rooms && bun run deploy:pages"
   },
   "dependencies": {
     "three": "^0.180.0"
@@ -33,8 +33,10 @@
     "vite": "^7.0.0",
     "wrangler": "^4.113.0"
   },
-  "allowScripts": {
-    "esbuild@0.28.1": true,
-    "workerd@1.20260721.1": true
-  }
+  "trustedDependencies": [
+    "esbuild",
+    "workerd",
+    "sharp",
+    "@cloudflare/workerd-darwin-arm64"
+  ]
 }

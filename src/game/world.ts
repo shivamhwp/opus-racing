@@ -240,6 +240,7 @@ export class World {
         lift: -0.03,
         uInner: 0,
         uOuter: 1,
+        withCorner: true,
       });
       if (g) runoffGeos.push(g);
     }
@@ -269,7 +270,7 @@ export class World {
     calls++;
 
     // --- kerbs, in the corners only ---------------------------------------
-    const kerbMat = makeKerbMaterial(def);
+    const kerbMat = makeKerbMaterial(this.sky, def);
     kerbMat.uniforms.uKerbPitch.value = track.length / Math.round(track.length / 3.2);
     const kerbGeos: BufferGeometry[] = [];
     for (const side of [-1, 1] as const) {
@@ -472,10 +473,14 @@ export class World {
       glow(new BoxGeometry(span, 1.6, 1.6).translate(0, 9.4, 0), 0),
       glow(new BoxGeometry(span * 0.62, 0.9, 0.2).translate(0, 8.4, 0.85), 1),
     ];
-    // The five start lights.
+    // The five start lamps: dark housings, since the actual start signal is
+    // shown on the HUD where the driver is already looking.
     for (let k = 0; k < 5; k++) {
       gantryParts.push(
-        glow(new BoxGeometry(0.9, 0.9, 0.25).translate((k - 2) * 1.5, 7.2, 0.9), 1),
+        glow(new BoxGeometry(1.0, 1.0, 0.3).translate((k - 2) * 1.6, 7.2, 0.9), 0),
+      );
+      gantryParts.push(
+        glow(new BoxGeometry(0.74, 0.74, 0.06).translate((k - 2) * 1.6, 7.2, 1.06), 0),
       );
     }
     const gantryGeo = mergeGeometries(gantryParts, false)!;
