@@ -155,14 +155,27 @@ bun run deploy:pages   # build + Pages
 bun run deploy         # both
 ```
 
-Then set the password:
+## Setting the password
 
 ```bash
-wrangler pages secret put APP_PASSWORD --project-name opus-racing
+bun run password 'my-access-key'
 ```
 
-Or in the dashboard under **Settings → Variables and Secrets**. Changing it
-takes effect on the next request and logs everyone out.
+That uploads the secret, redeploys, and verifies that the new key is accepted
+while an empty one and a wrong one are not.
+
+Doing it by hand has two traps worth knowing about:
+
+- `wrangler pages secret put` reads the value from **stdin**. Run it in a
+  non-interactive shell and it will cheerfully upload an *empty* secret. The app
+  fails closed on that — nobody can log in, including you — but it is a
+  confusing five minutes.
+- Pages binds secrets at **deployment** time. Setting a secret does nothing to
+  the deployment currently serving traffic until you redeploy. The dashboard
+  does not make this obvious.
+
+Rotating the password invalidates every existing session, because the cookie
+signing key is derived from the password itself.
 
 ## Layout
 
