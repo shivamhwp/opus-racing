@@ -1,4 +1,4 @@
-import { CAR, type CarInput, type CarSim } from "./physics";
+import { CAR, rackLimit, type CarInput, type CarSim } from "./physics";
 import { STATIONS, type Track } from "./track";
 
 /**
@@ -25,7 +25,7 @@ export function autopilot(car: CarSim, track: Track, out: CarInput, pace = 0.88)
   while (alpha < -Math.PI) alpha += Math.PI * 2;
 
   const delta = Math.atan2(2 * CAR.wheelbase * Math.sin(alpha), Math.max(4, ld));
-  const rack = CAR.maxSteer / (1 + v * CAR.steerSpeedFalloff);
+  const rack = rackLimit(v);
   // `delta` and `car.lateral` are both in the world's heading-increasing sense,
   // whereas `out.steer` is the driver-facing one where +1 means right. Negate.
   out.steer = Math.max(-1, Math.min(1, -(delta / rack + car.lateral * 0.04)));

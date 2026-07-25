@@ -196,12 +196,13 @@ export class Input {
     if (analogue) {
       s.steer = steerTarget;
     } else {
-      // Digital input: accelerate the rack toward the target, and centre it
-      // faster than it turns. Both rates fall off with speed so high-speed
-      // corrections stay delicate.
-      const speedScale = 1 / (1 + speedNorm * 2.1);
-      const turnRate = 3.6 * speedScale + 1.2;
-      const centreRate = 7.5;
+      // Digital input: accelerate toward the target, and centre faster than it
+      // turns. The physics rack is already grip-limited, so full deflection at
+      // 300 km/h is only a couple of degrees — the ramp can be quick without
+      // becoming twitchy, and a slow one just felt unresponsive.
+      const speedScale = 1 / (1 + speedNorm * 0.8);
+      const turnRate = 5.5 * speedScale + 2.2;
+      const centreRate = 10;
       const diff = steerTarget - s.steer;
       const rate = steerTarget === 0 || Math.sign(steerTarget) !== Math.sign(s.steer) ? centreRate : turnRate;
       const step = rate * dt;

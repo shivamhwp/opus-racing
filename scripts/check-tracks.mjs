@@ -63,7 +63,10 @@ for (const def of TRACKS) {
   // Minimum distance between non-adjacent parts of the track — must exceed the
   // full paved width or two straights would visually merge.
   let minSep = Infinity, sepAt = -1;
-  const needed = (def.halfWidth + def.runoff) * 2 + 6;
+  // The real barrier offset from world.ts, so widening the circuit cannot
+  // quietly push two sections of armco through each other.
+  const wallOffset = def.halfWidth * 1.14 + def.runoff + 3.5;
+  const needed = wallOffset * 2 + 8;
   for (let i = 0; i < STATIONS; i += 4) {
     for (let j = i + 64; j < STATIONS; j += 4) {
       if (Math.min(j - i, STATIONS - (j - i)) < 64) continue;
@@ -72,7 +75,7 @@ for (const def of TRACKS) {
     }
   }
   console.log(`  min separation ${minSep.toFixed(1)} m (need > ${needed.toFixed(1)}) @ station ${sepAt}`);
-  if (minSep < needed) fail(`track sections overlap: ${minSep.toFixed(1)}m < ${needed.toFixed(1)}m`);
+  if (minSep < needed) fail(`barriers from two sections would intersect: ${minSep.toFixed(1)}m < ${needed.toFixed(1)}m`);
 
   // Projection: hinted path must match a brute-force nearest station.
   let bad = 0;

@@ -67,6 +67,7 @@ function ribbon(track: Track, o: RibbonOpts): BufferGeometry | null {
   const au: number[] = [];
   const av: number[] = [];
   const ac: number[] = [];
+  const ahw: number[] = [];
   const idx: number[] = [];
 
   const emitPair = (i: number, v: number) => {
@@ -87,6 +88,7 @@ function ribbon(track: Track, o: RibbonOpts): BufferGeometry | null {
       au.push(u);
       av.push(v);
       ac.push(track.corner[s]);
+      ahw.push(track.halfW[s]);
     }
   };
 
@@ -132,7 +134,12 @@ function ribbon(track: Track, o: RibbonOpts): BufferGeometry | null {
   g.setAttribute("normal", new BufferAttribute(new Float32Array(nrm), 3));
   g.setAttribute("aU", new BufferAttribute(new Float32Array(au), 1));
   g.setAttribute("aV", new BufferAttribute(new Float32Array(av), 1));
-  if (o.withCorner) g.setAttribute("aCorner", new BufferAttribute(new Float32Array(ac), 1));
+  if (o.withCorner) {
+    g.setAttribute("aCorner", new BufferAttribute(new Float32Array(ac), 1));
+    // Lets a shader work in metres instead of in fractions of the road, so
+    // widening the circuit does not widen the painted lines with it.
+    g.setAttribute("aHalfW", new BufferAttribute(new Float32Array(ahw), 1));
+  }
   g.setIndex(idx);
   g.computeBoundingSphere();
   return g;
@@ -275,9 +282,10 @@ export class World {
     const kerbGeos: BufferGeometry[] = [];
     for (const side of [-1, 1] as const) {
       const g = ribbon(track, {
-        // Kerbs sit on the outside of the corner and on the apex inside.
-        inner: (i) => side * track.halfW[i] * 0.9,
-        outer: (i) => side * (track.halfW[i] * 1.02 + 1.5),
+        // A real kerb is about 2.5 m wide regardless of how wide the circuit
+        // is, so it is measured inward from the edge rather than scaled.
+        inner: (i) => side * (track.halfW[i] - 1.2),
+        outer: (i) => side * (track.halfW[i] + 1.4),
         lift: 0.06,
         mask: (i) => track.corner[i] > KERB_THRESHOLD,
         uInner: 0,

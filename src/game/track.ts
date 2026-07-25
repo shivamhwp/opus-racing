@@ -13,7 +13,7 @@ export interface TrackDef {
   subtitle: string;
   /** Control points in metres, [x, z]. Closed loop — do not repeat the first. */
   points: readonly (readonly [number, number])[];
-  /** Half-width of racing surface in metres. */
+  /** Half-width of the racing surface in metres. */
   halfWidth: number;
   /** Extra tarmac run-off beyond the white line. */
   runoff: number;
@@ -41,7 +41,7 @@ export const TRACKS: readonly TrackDef[] = [
     id: "vermilion",
     name: "Vermilion Bay",
     subtitle: "Fast sweepers · 3.4 km · clear midday",
-    halfWidth: 8.5,
+    halfWidth: 17,
     runoff: 9,
     accent: 0xd81f3c,
     accent2: 0x1e6fd8,
@@ -87,7 +87,7 @@ export const TRACKS: readonly TrackDef[] = [
     id: "cobalt",
     name: "Cobalt Deep",
     subtitle: "Two DRS straights · 4.1 km · bright afternoon",
-    halfWidth: 9,
+    halfWidth: 18,
     runoff: 11,
     accent: 0x1157c9,
     accent2: 0x22b07a,
@@ -133,7 +133,7 @@ export const TRACKS: readonly TrackDef[] = [
     id: "ember",
     name: "Ember Ring",
     subtitle: "Technical · 2.6 km · golden hour",
-    halfWidth: 7.5,
+    halfWidth: 15,
     runoff: 7,
     accent: 0xe07a12,
     accent2: 0xc02a55,
@@ -537,7 +537,9 @@ export class Track {
     const stations = backFromLine / this.stationLength;
     const fi = this.def.startOffset - stations;
     const i = ((Math.round(fi) % STATIONS) + STATIONS) & (STATIONS - 1);
-    const lateral = side * this.halfW[i] * 0.42;
+    // A fixed offset in metres. Staggering by a fraction of the track width
+    // would fling the grid apart the moment the circuit got wider.
+    const lateral = side * Math.min(4.5, this.halfW[i] * 0.4);
     out.x = this.px[i] + this.nx[i] * lateral;
     out.z = this.pz[i] + this.nz[i] * lateral;
     out.y = this.py[i];

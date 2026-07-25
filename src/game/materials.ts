@@ -333,14 +333,16 @@ export function makeRoadMaterial(sky: SkyUniforms, def: TrackDef, lapLength: num
       attribute float aU;
       attribute float aV;
       attribute float aCorner;
+      attribute float aHalfW;
       varying float vU;
       varying float vV;
       varying float vCorner;
+      varying float vHalfW;
       varying vec3 vWorld;
       varying vec3 vNormalW;
       varying float vDepth;
       void main(){
-        vU = aU; vV = aV; vCorner = aCorner;
+        vU = aU; vV = aV; vCorner = aCorner; vHalfW = aHalfW;
         vec4 world = modelMatrix * vec4(position, 1.0);
         vWorld = world.xyz;
         vNormalW = normalize(mat3(modelMatrix) * normal);
@@ -359,12 +361,16 @@ export function makeRoadMaterial(sky: SkyUniforms, def: TrackDef, lapLength: num
       varying float vU;
       varying float vV;
       varying float vCorner;
+      varying float vHalfW;
       varying vec3 vWorld;
       varying vec3 vNormalW;
       varying float vDepth;
 
       void main(){
-        float au = abs(vU);
+        // Everything on the road is dimensioned in metres from the centreline.
+        // Working in normalised width would make a 34 m circuit paint a 1.3 m
+        // white line and lay down an 11 m racing line.
+        float latM = abs(vU) * vHalfW;
 
         // Asphalt: coarse aggregate plus a finer grain, both in world space so
         // the texture never stretches through a corner.
@@ -377,25 +383,30 @@ export function makeRoadMaterial(sky: SkyUniforms, def: TrackDef, lapLength: num
         float seam = smoothstep(0.84, 0.93, fbm(vWorld.xz * 0.26));
         albedo = mix(albedo, albedo * 0.80, seam * 0.6);
 
-        // Rubbered-in racing line, widest and darkest through the corners.
-        float rubber = smoothstep(0.70, 0.12, au) * (0.30 + 0.45 * vCorner);
+        // Rubbered-in racing line: a ~13 m band of worked surface, widest and
+        // darkest through the corners.
+        float rubber = smoothstep(6.5, 1.0, latM) * (0.30 + 0.45 * vCorner);
         albedo = mix(albedo, vec3(0.088, 0.086, 0.090), rubber);
 
-        // White edge lines.
-        float line = smoothstep(0.888, 0.902, au) * (1.0 - smoothstep(0.948, 0.962, au));
+        // White edge line: 0.2 m wide, set 0.3 m inside the boundary.
+        float line = smoothstep(vHalfW - 0.55, vHalfW - 0.48, latM)
+                   * (1.0 - smoothstep(vHalfW - 0.32, vHalfW - 0.25, latM));
         albedo = mix(albedo, vec3(0.80, 0.80, 0.78), line);
 
         // 50 m boards just inside the line, tinted by sector.
         float sector = floor(vV / (uLapLength / 3.0));
         vec3 sectorCol = sector < 1.0 ? uAccent : (sector < 2.0 ? uAccent2 : vec3(0.95, 0.80, 0.15));
         float tick = step(0.94, fract(vV / uMarkerLen))
-                   * smoothstep(0.80, 0.83, au) * (1.0 - smoothstep(0.873, 0.885, au));
+                   * smoothstep(vHalfW - 2.9, vHalfW - 2.7, latM)
+                   * (1.0 - smoothstep(vHalfW - 1.5, vHalfW - 1.3, latM));
         albedo = mix(albedo, sectorCol * 0.75, tick);
 
         // Start/finish: a checkered band across the full width.
         float sLine = smoothstep(6.0, 4.0,
           abs(mod(vV + uLapLength * 0.5, uLapLength) - uLapLength * 0.5));
-        float checker = step(0.5, fract(vU * 5.0)) == step(0.5, fract(vV * 0.5)) ? 0.055 : 0.78;
+        // 0.8 m squares, so the grid reads the same on any width of circuit.
+        float checker = step(0.5, fract(vU * vHalfW / 0.8)) == step(0.5, fract(vV / 0.8))
+          ? 0.055 : 0.78;
         albedo = mix(albedo, vec3(checker), sLine);
 
         vec3 N = normalize(vNormalW);

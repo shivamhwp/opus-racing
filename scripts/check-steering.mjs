@@ -10,7 +10,7 @@
 // exactly as the game does, project world points through it, and asserts that
 // pressing left moves the car toward the left-hand side of the frame.
 import { Matrix4, PerspectiveCamera, Vector3 } from "three";
-import { CarSim, CAR } from "../src/game/physics.ts";
+import { CarSim, CAR, rackLimit } from "../src/game/physics.ts";
 import { Track, TRACKS } from "../src/game/track.ts";
 import { DIMS } from "../src/game/carModel.ts";
 
@@ -120,6 +120,47 @@ check(Math.abs(right.roll) < 0.12, "body roll stays plausible",
 check(Math.abs(right.steerAngle) <= CAR.maxSteer + 1e-6,
   "rack angle never exceeds the mechanical limit",
   `${Math.abs(right.steerAngle).toFixed(3)} rad`);
+
+// --- full lock must mean the same thing at every speed -----------------------
+// This is what makes steering feel linear. With a flat 1/(1+kv) rack, full lock
+// asked for 0.6x the grip limit at 36 km/h and 4.0x at 288 — so most of the
+// travel did nothing, and how much of it mattered changed with speed.
+const G = 9.81;
+console.log("\n  Steering authority (full lock vs. the grip limit):");
+let minRatio = Infinity, maxRatio = 0;
+for (const v of [20, 30, 45, 60, 80]) {
+  const demand = (v * Math.tan(rackLimit(v))) / CAR.wheelbase;
+  const cap = (CAR.mu[0] * G * (1 + CAR.downforce * v * v)) / Math.max(6, v);
+  const ratio = demand / cap;
+  minRatio = Math.min(minRatio, ratio);
+  maxRatio = Math.max(maxRatio, ratio);
+  console.log(`    ${String(Math.round(v * 3.6)).padStart(3)} km/h   ${ratio.toFixed(2)}x   corner radius ${(v / Math.min(demand, cap)).toFixed(0)} m`);
+}
+check(minRatio > 1.05, "full lock always reaches the grip limit", `min ${minRatio.toFixed(2)}x`);
+check(maxRatio < 1.6, "full lock never wildly overshoots it", `max ${maxRatio.toFixed(2)}x`);
+check(maxRatio - minRatio < 0.25, "authority is consistent across the speed range",
+  `spread ${(maxRatio - minRatio).toFixed(2)}`);
+
+// --- turn-in has to be prompt ------------------------------------------------
+{
+  const track = proving();
+  const car = new CarSim();
+  car.reset(track, 0, 0, 0, 0);
+  // Get to ~200 km/h in a straight line first.
+  for (let t = 0; t < 12; t += 1 / 120) car.update(1 / 120, inp(0), track);
+  const v = car.speed;
+  let settled = 0;
+  const target = Math.min(
+    (v * Math.tan(rackLimit(v))) / CAR.wheelbase,
+    (CAR.mu[0] * G * (1 + CAR.downforce * v * v)) / Math.max(6, v),
+  );
+  for (let t = 0; t < 2; t += 1 / 120) {
+    car.update(1 / 120, { throttle: 0, brake: 0, steer: 1, handbrake: false, drs: false }, track);
+    if (Math.abs(car.yawRate) >= target * 0.9) { settled = t; break; }
+  }
+  check(settled > 0 && settled < 0.45, "reaches 90% of steady yaw promptly",
+    `${(settled * 1000).toFixed(0)} ms at ${(v * 3.6).toFixed(0)} km/h`);
+}
 
 console.log(failed ? "\nFAILED" : "\nSteering OK");
 process.exit(failed ? 1 : 0);

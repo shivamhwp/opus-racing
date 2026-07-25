@@ -26,9 +26,12 @@ export const CAR = {
   power: 900,
   brakeAccel: 42, // ≈ 4.3 g
   wheelbase: 3.6,
-  maxSteer: 0.54, // rad at parking speed
-  steerSpeedFalloff: 0.043,
-  steerRate: 9.5, // how fast the rack follows input
+  maxSteer: 0.54, // mechanical lock, rad
+  /** How far past the grip limit full lock is allowed to ask. Above 1 the car
+   *  will understeer if you overdrive it, which is the feedback that tells you
+   *  you have asked for too much. */
+  steerAuthority: 1.3,
+  steerRate: 16, // how fast the rack follows input
   /** Grip multiplier per (m/s)²: 1 + df·v². 3.3x at 300 km/h. */
   downforce: 0.00033,
   dragCoef: 0.00125,
@@ -43,9 +46,30 @@ export const CAR = {
   surfaceDrag: [0, 2.4, 3.2],
   /** Speed-proportional scrub — what actually caps off-track top speed. */
   surfaceDragV: [0, 0.06, 0.14],
-  yawResponse: 11,
+  yawResponse: 15,
   driftYawGain: 1.55, // extra rotation available on the handbrake
 } as const;
+
+/**
+ * Steering travel available at a given speed, in radians.
+ *
+ * This is the fix for a steering feel that was badly non-linear. Scaling the
+ * rack by a flat 1/(1+kv) meant full lock asked for four times more yaw than
+ * the tyres could produce at 300 km/h — so the first quarter of the travel did
+ * everything and the rest did nothing. Deriving the limit from the grip
+ * actually available makes full lock mean the same thing at every speed: the
+ * limit of adhesion, plus a deliberate margin to overdrive into.
+ *
+ * The reference grip is tarmac even when the car is on grass, so running wide
+ * changes how much the car grips, not what the wheel does in your hands.
+ */
+export function rackLimit(speed: number): number {
+  const v = Math.abs(speed);
+  const refGrip = CAR.mu[SURFACE_TARMAC] * G * (1 + CAR.downforce * v * v);
+  // Required steer angle for a corner radius of v²/grip, small-angle exact.
+  const gripSteer = Math.atan((refGrip * CAR.wheelbase) / Math.max(9, v * v));
+  return Math.min(CAR.maxSteer, gripSteer * CAR.steerAuthority);
+}
 
 /** Speed (m/s) at which each gear tops out. */
 const GEAR_TOPS = [14, 25, 37, 48, 59, 70, 80, 999];
@@ -176,8 +200,8 @@ export class CarSim {
           : SURFACE_GRASS;
     this.offTrack = this.surface !== SURFACE_TARMAC;
 
-    // Kerb strip: the outer 12% of the racing surface.
-    const onKerb = absLat > halfW * 0.88 && absLat <= halfW * 1.02;
+    // Kerb strip: a fixed 1.6 m band at the edge, matching the geometry.
+    const onKerb = absLat > halfW - 1.6 && absLat <= halfW + 0.4;
     this.kerbHit = onKerb && Math.abs(this.speed) > 6 ? 1 : 0;
 
     // --- lap bookkeeping ---------------------------------------------------
@@ -249,8 +273,7 @@ export class CarSim {
     // sign to the input. Without this the wheels and the car both go the wrong
     // way, which is subtle enough to survive a physics suite that only ever
     // measures magnitudes.
-    const steerTarget =
-      -CAR.maxSteer * input.steer * (1 / (1 + speedAbs * CAR.steerSpeedFalloff));
+    const steerTarget = -rackLimit(speedAbs) * input.steer;
     this.steerAngle += (steerTarget - this.steerAngle) * Math.min(1, CAR.steerRate * dt);
 
     let desiredYaw = (vLong * Math.tan(this.steerAngle)) / CAR.wheelbase;

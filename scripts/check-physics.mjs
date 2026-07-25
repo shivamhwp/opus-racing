@@ -2,7 +2,7 @@
 // pure-pursuit driver can complete a clean lap of every circuit — which is the
 // only honest proof that the track + physics combination is actually driveable.
 import { TRACKS, Track, STATIONS } from "../src/game/track.ts";
-import { CarSim, CAR } from "../src/game/physics.ts";
+import { CarSim, CAR, rackLimit } from "../src/game/physics.ts";
 
 const DT = 1 / 120;
 let failed = false;
@@ -173,7 +173,7 @@ for (const def of TRACKS) {
     while (alpha > Math.PI) alpha -= Math.PI * 2;
     while (alpha < -Math.PI) alpha += Math.PI * 2;
     const delta = Math.atan2(2 * CAR.wheelbase * Math.sin(alpha), Math.max(4, ld));
-    const rackAtSpeed = CAR.maxSteer / (1 + v * CAR.steerSpeedFalloff);
+    const rackAtSpeed = rackLimit(v);
     // `delta` and `lateral` are both in the world's heading-increasing sense.
     // `steer` is the driver-facing convention where +1 means right, which is a
     // decreasing heading — so the whole thing is negated.
