@@ -143,6 +143,11 @@ anywhere with `BASE=https://… APP_PASSWORD=…`.
 - **check:physics** — acceleration, top speed, braking g, cornering g at three
   speeds, surface penalties, stability under 120 s of random input, and a
   pure-pursuit reference driver that must complete a clean lap of every circuit.
+- **check:steering** — pressing left actually turns left. This one projects
+  world points through a camera set up exactly as the game's is, because every
+  other physics check measures a *magnitude* and a mirrored steering axis
+  produces identical magnitudes — the reference driver even completes clean laps
+  with the sign inverted, since its own correction is inverted the same way.
 - **check:car** — the car matches F1 regulation dimensions and stays in budget.
 - **check:world** — every horizontal surface actually faces the sky, nothing
   sinks below the ground plane, draw calls stay in budget.

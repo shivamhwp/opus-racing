@@ -174,9 +174,10 @@ for (const def of TRACKS) {
     while (alpha < -Math.PI) alpha += Math.PI * 2;
     const delta = Math.atan2(2 * CAR.wheelbase * Math.sin(alpha), Math.max(4, ld));
     const rackAtSpeed = CAR.maxSteer / (1 + v * CAR.steerSpeedFalloff);
-    // Positive steer turns toward +x, which is track-right, and positive
-    // `lateral` means the car sits track-left — so the correction adds.
-    const steer = Math.max(-1, Math.min(1, delta / rackAtSpeed + c.lateral * 0.04));
+    // `delta` and `lateral` are both in the world's heading-increasing sense.
+    // `steer` is the driver-facing convention where +1 means right, which is a
+    // decreasing heading — so the whole thing is negated.
+    const steer = Math.max(-1, Math.min(1, -(delta / rackAtSpeed + c.lateral * 0.04)));
 
     // Speed target from the tightest curvature inside the braking zone ahead.
     // v² = grip/k where grip itself grows with v², so solve it in closed form:

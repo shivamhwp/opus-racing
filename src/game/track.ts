@@ -225,7 +225,7 @@ export interface Projection {
   index: number;
   /** Normalised lap progress, 0..1. */
   progress: number;
-  /** Signed distance from centreline; positive = track-left. */
+  /** Signed distance from the centreline; positive is the driver's right. */
   lateral: number;
   /** Centreline heading (radians, atan2(tx, tz) convention used by the sim). */
   heading: number;
@@ -253,7 +253,7 @@ export class Track {
   /** Unit tangents (direction of travel). */
   readonly tx = new Float32Array(STATIONS);
   readonly tz = new Float32Array(STATIONS);
-  /** Unit left-normals. */
+  /** Unit normals, 90° from the tangent. Points to the driver's right. */
   readonly nx = new Float32Array(STATIONS);
   readonly nz = new Float32Array(STATIONS);
   /** Signed curvature, 1/m. */

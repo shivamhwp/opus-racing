@@ -242,8 +242,15 @@ export class CarSim {
     if (input.throttle < 0.02 && Math.abs(vLong) < 0.35) vLong = 0;
 
     // --- steering & yaw ----------------------------------------------------
+    // `input.steer` is +1 when the driver turns right. A right turn is a
+    // *decreasing* heading here: the camera sits behind the car looking along
+    // its forward axis, and world +X projects to screen-left, while increasing
+    // heading rotates forward toward +X. So the rack angle takes the opposite
+    // sign to the input. Without this the wheels and the car both go the wrong
+    // way, which is subtle enough to survive a physics suite that only ever
+    // measures magnitudes.
     const steerTarget =
-      CAR.maxSteer * input.steer * (1 / (1 + speedAbs * CAR.steerSpeedFalloff));
+      -CAR.maxSteer * input.steer * (1 / (1 + speedAbs * CAR.steerSpeedFalloff));
     this.steerAngle += (steerTarget - this.steerAngle) * Math.min(1, CAR.steerRate * dt);
 
     let desiredYaw = (vLong * Math.tan(this.steerAngle)) / CAR.wheelbase;
@@ -323,8 +330,13 @@ export class CarSim {
     this.bob += this.bobVel * dt;
     this.y = targetY + this.bob;
 
+    // Body roll leans away from the corner: turning right (negative yaw rate)
+    // puts weight on the left, so the left drops. Local +X is the car's left
+    // side, so the roll angle follows the sign of the yaw rate. Real cars roll
+    // only a degree or two; this is a little exaggerated so it reads at speed,
+    // but not so much that the car looks like it is capsizing.
     const bankRoll = track.bank[this.station];
-    const targetRoll = bankRoll - this.yawRate * Math.abs(vLong) * 0.0058 - vLat * 0.011;
+    const targetRoll = bankRoll + this.yawRate * Math.abs(vLong) * 0.0012 - vLat * 0.008;
     const targetPitch = -longAccel * 0.0032;
     this.roll += (targetRoll - this.roll) * Math.min(1, 8 * dt);
     this.pitch += (targetPitch - this.pitch) * Math.min(1, 10 * dt);

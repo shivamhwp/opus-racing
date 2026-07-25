@@ -682,7 +682,7 @@ export class Game {
       const d = this.drivers.get(r.id);
       // Roll and pitch are not on the wire — they are cosmetic, and deriving
       // them from transmitted steer and speed costs nothing and looks right.
-      const roll = -r.steer * Math.min(1, Math.abs(r.speed) / 40) * 0.22;
+      const roll = r.steer * Math.min(1, Math.abs(r.speed) / 40) * 0.18;
       const y = this.track.heightAt(r.progress * STATIONS) + 0.34;
       addCar(r.x, y, r.z, r.heading, roll, 0, r.steer, r.wheelSpin, d?.hue ?? 200);
     }

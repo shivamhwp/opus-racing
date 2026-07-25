@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "check": "bun run check:tracks && bun run check:physics && bun run check:car && bun run check:world",
+    "check": "bun run check:tracks && bun run check:physics && bun run check:steering && bun run check:car && bun run check:world",
     "check:tracks": "bun scripts/check-tracks.mjs",
     "check:physics": "bun scripts/check-physics.mjs",
     "check:car": "bun scripts/check-car.mjs",
@@ -20,7 +20,8 @@
     "deploy:rooms": "wrangler deploy --config server/wrangler.toml",
     "deploy:pages": "bun run build && wrangler pages deploy",
     "deploy": "bun run deploy:rooms && bun run deploy:pages",
-    "password": "bun scripts/set-password.mjs"
+    "password": "bun scripts/set-password.mjs",
+    "check:steering": "bun scripts/check-steering.mjs"
   },
   "dependencies": {
     "three": "^0.180.0"
