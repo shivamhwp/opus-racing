@@ -147,9 +147,11 @@ const race = await host.page.evaluate(() => ({
   gear: document.querySelector(".speedo .gear")?.textContent,
   lapTime: document.querySelector(".v--cur")?.textContent,
   boardRows: [...document.querySelectorAll(".board__row")].filter(r=>!r.hidden).length,
-  mapDots: document.querySelectorAll("#minimap-svg circle").length,
+  mapDots: document.querySelectorAll("#minimap-svg rect, #minimap-svg circle").length,
   perf: document.querySelector(".perf__grid")?.textContent,
   fps: document.querySelector(".perf__grid b")?.textContent,
+  thrFillW: document.querySelector(".fill--thr")?.getBoundingClientRect().width ?? 0,
+  thrTrackW: document.querySelector(".bar__track")?.getBoundingClientRect().width ?? 0,
 }));
 console.log("  race:", JSON.stringify(race));
 check(race.hudVisible, "HUD visible during the race");
@@ -158,6 +160,9 @@ check(race.lapTime !== "0:00.000", "lap timer running", race.lapTime);
 check(race.boardRows >= 2, "leaderboard shows both cars", String(race.boardRows));
 check(race.mapDots >= 3, "minimap shows self + start + rival", String(race.mapDots));
 check(Number(race.fps) > 30, "frame rate healthy", race.fps + " fps");
+check(race.thrFillW > race.thrTrackW * 0.8,
+  "throttle bar actually renders and fills",
+  `${race.thrFillW.toFixed(0)}px of ${race.thrTrackW.toFixed(0)}px`);
 
 await host.page.screenshot({ path: OUT + "/12-racing.png" });
 await guest.page.screenshot({ path: OUT + "/13-racing-guest.png" });

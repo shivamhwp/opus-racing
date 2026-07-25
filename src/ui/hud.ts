@@ -52,9 +52,9 @@ export class Hud {
   private board!: HTMLElement;
   private boardRows: HTMLElement[] = [];
 
-  private mapSelf!: SVGCircleElement;
+  private mapSelf!: SVGRectElement;
   private mapOthers!: SVGGElement;
-  private mapDots: SVGCircleElement[] = [];
+  private mapDots: SVGRectElement[] = [];
 
   private countdown!: HTMLElement;
   private lights: HTMLElement[] = [];
@@ -124,6 +124,9 @@ export class Hud {
     );
 
     this.board = el("div", "tile board");
+    this.board.append(
+      el("div", "board__head", `<span class="label">Order</span><span class="label">Gap</span>`),
+    );
     tr.append(timing, this.board);
     r.append(tr);
 
@@ -219,8 +222,9 @@ export class Hud {
     svg.setAttribute("viewBox", "0 0 100 100");
     svg.id = "minimap-svg";
     this.mapOthers = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    this.mapSelf = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    this.mapSelf.setAttribute("r", "3.4");
+    this.mapSelf = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    this.mapSelf.setAttribute("width", "7");
+    this.mapSelf.setAttribute("height", "7");
     this.mapSelf.setAttribute("fill", "#fff");
     this.mapSelf.setAttribute("stroke", "var(--accent)");
     this.mapSelf.setAttribute("stroke-width", "2");
@@ -272,11 +276,12 @@ export class Hud {
     inner.setAttribute("class", "route-in");
     inner.setAttribute("d", path);
 
-    const mark = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    const mark = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     mark.setAttribute("class", "start-mark");
-    mark.setAttribute("cx", String(start[0]));
-    mark.setAttribute("cy", String(start[1]));
-    mark.setAttribute("r", "2.6");
+    mark.setAttribute("x", String(start[0] - 1.6));
+    mark.setAttribute("y", String(start[1] - 4));
+    mark.setAttribute("width", "3.2");
+    mark.setAttribute("height", "8");
     mark.setAttribute("fill", accent);
 
     svg.prepend(outer, inner, mark);
@@ -387,12 +392,14 @@ export class Hud {
   }
 
   private updateMap(f: HudFrame) {
-    this.mapSelf.setAttribute("cx", (f.selfPoint[0] * 100).toFixed(2));
-    this.mapSelf.setAttribute("cy", (f.selfPoint[1] * 100).toFixed(2));
+    // SVG rects position from their corner, so offset by half the marker.
+    this.mapSelf.setAttribute("x", (f.selfPoint[0] * 100 - 3.5).toFixed(2));
+    this.mapSelf.setAttribute("y", (f.selfPoint[1] * 100 - 3.5).toFixed(2));
 
     while (this.mapDots.length < f.others.length) {
-      const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      dot.setAttribute("r", "2.4");
+      const dot = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      dot.setAttribute("width", "5");
+      dot.setAttribute("height", "5");
       this.mapDots.push(dot);
       this.mapOthers.append(dot);
     }
@@ -404,8 +411,8 @@ export class Hud {
         continue;
       }
       dot.setAttribute("opacity", "1");
-      dot.setAttribute("cx", (o.x * 100).toFixed(2));
-      dot.setAttribute("cy", (o.y * 100).toFixed(2));
+      dot.setAttribute("x", (o.x * 100 - 2.5).toFixed(2));
+      dot.setAttribute("y", (o.y * 100 - 2.5).toFixed(2));
       dot.setAttribute("fill", `hsl(${o.hue} 82% 58%)`);
     }
   }

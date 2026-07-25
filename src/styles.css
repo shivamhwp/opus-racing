@@ -33,9 +33,11 @@
   --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Mono", "Roboto Mono", Menlo, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
 
-  --r-sm: 8px;
-  --r-md: 12px;
-  --r-lg: 18px;
+  /* Kept as tokens so the sharp-edged intent is stated once, not implied by
+     28 separate declarations. Nothing in this interface is rounded. */
+  --r-sm: 0;
+  --r-md: 0;
+  --r-lg: 0;
   --blur: blur(20px) saturate(150%);
   --shadow: 0 30px 70px -28px rgba(0, 0, 0, 0.92);
 }
@@ -113,12 +115,24 @@ svg.ph {
    ======================================================================== */
 
 .panel {
+  position: relative;
   background: var(--panel);
   backdrop-filter: var(--blur);
   -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  border-radius: 0;
+  box-shadow: var(--shadow);
+}
+
+/* A single hard rule across the top, the way a timing screen delimits a block. */
+.panel::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent 62%);
 }
 
 .label {
@@ -141,7 +155,7 @@ svg.ph {
   gap: 9px;
   padding: 12px 18px;
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.04);
   color: var(--ink);
   font-family: var(--mono);
@@ -169,15 +183,18 @@ svg.ph {
 }
 
 .btn--primary {
-  background: linear-gradient(96deg, var(--accent), #ff5c3a);
-  border-color: transparent;
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
-  box-shadow: 0 10px 30px -12px var(--accent);
+  box-shadow: 0 10px 30px -14px var(--accent);
+  /* A clipped bottom-right corner: still an edge, and it stops a plain
+     rectangle from reading as an unstyled default button. */
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%);
+  padding-right: 22px;
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: linear-gradient(96deg, var(--accent), #ff7048);
-  filter: brightness(1.06);
+  filter: brightness(1.12);
 }
 
 .btn--ghost {
@@ -198,7 +215,7 @@ svg.ph {
 .input {
   width: 100%;
   padding: 12px 14px;
-  border-radius: var(--r-md);
+  border-radius: 0;
   border: 1px solid var(--line);
   background: rgba(0, 0, 0, 0.42);
   color: var(--ink);
@@ -230,7 +247,7 @@ svg.ph {
   min-width: 44px;
   padding: 10px 6px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.03);
   color: var(--dim);
   font-family: var(--mono);
@@ -386,9 +403,9 @@ svg.ph {
 }
 
 .hue {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
+  width: 28px;
+  height: 22px;
+  border-radius: 0;
   border: 2px solid transparent;
   cursor: pointer;
   transition: transform 0.14s, border-color 0.14s;
@@ -424,7 +441,7 @@ svg.ph {
   gap: 13px;
   padding: 11px 13px;
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.025);
   cursor: pointer;
   text-align: left;
@@ -439,6 +456,7 @@ svg.ph {
 
 .track[aria-pressed="true"] {
   border-color: color-mix(in srgb, var(--tint) 70%, transparent);
+  border-left: 3px solid var(--tint);
   background: color-mix(in srgb, var(--tint) 13%, transparent);
 }
 
@@ -481,22 +499,21 @@ svg.ph {
   align-items: center;
   gap: 11px;
   padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.028);
-  border: 1px solid transparent;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 3px solid rgba(255, 255, 255, 0.12);
 }
 
 .player--self {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .player .chip {
-  width: 10px;
-  height: 22px;
-  border-radius: 3px;
+  width: 8px;
+  height: 24px;
+  border-radius: 0;
   background: hsl(var(--h) 82% 52%);
-  box-shadow: 0 0 12px hsl(var(--h) 82% 52% / 0.6);
   flex: none;
 }
 
@@ -519,7 +536,7 @@ svg.ph {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   padding: 4px 7px;
-  border-radius: 6px;
+  border-radius: 0;
   border: 1px solid var(--line);
   color: var(--dim);
 }
@@ -539,7 +556,7 @@ svg.ph {
   align-items: center;
   gap: 10px;
   padding: 13px 15px;
-  border-radius: var(--r-md);
+  border-radius: 0;
   border: 1px dashed var(--line-strong);
   background: rgba(0, 0, 0, 0.32);
 }
@@ -562,7 +579,7 @@ svg.ph {
 .kbd {
   display: inline-block;
   padding: 2px 6px;
-  border-radius: 5px;
+  border-radius: 0;
   border: 1px solid var(--line-strong);
   background: rgba(255, 255, 255, 0.06);
   font-family: var(--mono);
@@ -584,9 +601,13 @@ svg.ph {
 .dot {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: 0;
   background: var(--dimmer);
   flex: none;
+}
+
+.room-code {
+  border-style: solid;
 }
 
 .dot--live {
@@ -611,7 +632,7 @@ svg.ph {
   gap: 9px;
   align-items: flex-start;
   padding: 11px 13px;
-  border-radius: 10px;
+  border-radius: 0;
   border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
   background: color-mix(in srgb, var(--accent) 9%, transparent);
   color: #ffb3c1;
@@ -650,12 +671,35 @@ svg.ph {
 }
 
 .tile {
-  background: rgba(8, 9, 14, 0.55);
+  position: relative;
+  background: rgba(8, 9, 14, 0.62);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 11px 14px;
+  border-radius: 0;
+  padding: 10px 13px;
+}
+
+/* Corner ticks: two short rules at the top-left, which reads as a bracket
+   without costing an element or a repaint. */
+.tile::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 10px;
+  height: 2px;
+  background: var(--accent);
+}
+
+.tile::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 2px;
+  height: 10px;
+  background: var(--accent);
 }
 
 /* --- lap + position --- */
@@ -776,9 +820,9 @@ svg.ph {
 }
 
 .revs i {
-  width: 13px;
-  height: 4px;
-  border-radius: 2px;
+  width: 15px;
+  height: 5px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.11);
   transition: background 0.05s linear, box-shadow 0.05s linear;
 }
@@ -819,15 +863,18 @@ svg.ph {
 .bar__track {
   flex: 1;
   height: 5px;
-  border-radius: 3px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
 }
 
 .bar .fill {
+  /* <i> is inline by default, and inline boxes ignore width and height — the
+     bar renders as a 0x0 element that is invisible but throws no error. */
+  display: block;
   height: 100%;
   width: 100%;
-  border-radius: 3px;
+  border-radius: 0;
   transform-origin: left center;
   transform: scaleX(var(--v, 0));
   transition: transform 0.05s linear;
@@ -845,7 +892,7 @@ svg.ph {
 
 .steer {
   height: 5px;
-  border-radius: 3px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.08);
   position: relative;
   overflow: hidden;
@@ -870,7 +917,7 @@ svg.ph {
   font-weight: 700;
   letter-spacing: 0.2em;
   padding: 7px 12px;
-  border-radius: 9px;
+  border-radius: 0;
   border: 1px solid var(--line);
   color: var(--dimmer);
   transition: all 0.14s;
@@ -890,50 +937,75 @@ svg.ph {
 
 /* --- leaderboard --- */
 .board {
-  min-width: 216px;
-  padding: 10px;
+  min-width: 240px;
+  padding: 0;
+}
+
+.board__head {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 10px 6px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.045);
 }
 
 .board__row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 20px 3px 1fr auto;
   align-items: center;
-  gap: 8px;
-  padding: 5px 7px;
-  border-radius: 7px;
+  gap: 9px;
+  padding: 6px 10px;
+  border-radius: 0;
   font-family: var(--mono);
   font-size: 11.5px;
+  border-left: 2px solid transparent;
+}
+
+/* Hairline rules between rows rather than gaps: denser, and it reads as a
+   single instrument instead of a stack of separate chips. */
+.board__row + .board__row {
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
 }
 
 .board__row--self {
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.085);
+  border-left-color: var(--accent);
 }
 
 .board__row .p {
-  width: 15px;
-  color: var(--dimmer);
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.09);
+  padding: 1px 0;
+}
+
+.board__row--self .p {
+  background: var(--accent);
+  color: #fff;
 }
 
 .board__row .c {
-  width: 4px;
-  height: 15px;
-  border-radius: 2px;
+  width: 3px;
+  height: 16px;
+  border-radius: 0;
   background: hsl(var(--h) 82% 52%);
   flex: none;
 }
 
 .board__row .n {
-  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
 }
 
 .board__row .g {
   color: var(--dim);
   font-variant-numeric: tabular-nums;
   font-size: 10.5px;
+  letter-spacing: 0.04em;
 }
 
 /* --- minimap --- */
@@ -979,7 +1051,7 @@ svg.ph {
   display: flex;
   gap: 12px;
   padding: 15px 19px;
-  border-radius: 17px;
+  border-radius: 0;
   background: rgba(6, 6, 10, 0.76);
   border: 1px solid var(--line);
   backdrop-filter: blur(14px);
@@ -987,10 +1059,10 @@ svg.ph {
 }
 
 .lights i {
-  width: 27px;
-  height: 27px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.07);
+  width: 26px;
+  height: 34px;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--line);
   transition: background 0.1s, box-shadow 0.1s;
 }
@@ -1032,7 +1104,7 @@ svg.ph {
 
 .toast {
   padding: 11px 20px;
-  border-radius: 12px;
+  border-radius: 0;
   background: rgba(8, 9, 14, 0.8);
   border: 1px solid var(--line);
   backdrop-filter: blur(14px);
@@ -1129,7 +1201,7 @@ body.is-touch .touch {
   bottom: max(24px, env(safe-area-inset-bottom));
   width: 76px;
   height: 76px;
-  border-radius: 50%;
+  border-radius: 0;
   border: 1px solid var(--line-strong);
   background: rgba(10, 11, 17, 0.55);
   backdrop-filter: blur(10px);
@@ -1175,13 +1247,14 @@ body.is-touch .touch {
 
 .result {
   display: grid;
-  grid-template-columns: 34px 8px 1fr auto auto;
+  grid-template-columns: 34px 6px 1fr auto auto;
   align-items: center;
   gap: 13px;
   padding: 13px 15px;
-  border-radius: var(--r-md);
-  background: rgba(255, 255, 255, 0.028);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid transparent;
+  border-left: 3px solid rgba(255, 255, 255, 0.12);
   animation: result-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
@@ -1193,17 +1266,17 @@ body.is-touch .touch {
 }
 
 .result--self {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
 }
 
 .result--p1 {
   background: linear-gradient(
     96deg,
-    color-mix(in srgb, var(--warn) 16%, transparent),
+    color-mix(in srgb, var(--warn) 18%, transparent),
     transparent 62%
   );
-  border-color: color-mix(in srgb, var(--warn) 42%, transparent);
+  border-left-color: var(--warn);
 }
 
 .result .pos {
@@ -1221,7 +1294,7 @@ body.is-touch .touch {
 .result .swatch {
   width: 8px;
   height: 30px;
-  border-radius: 3px;
+  border-radius: 0;
   background: hsl(var(--h) 82% 52%);
   box-shadow: 0 0 14px hsl(var(--h) 82% 52% / 0.55);
 }
@@ -1287,7 +1360,7 @@ body.is-touch .touch {
   height: 2px;
   margin: 20px auto 0;
   background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
+  border-radius: 0;
   overflow: hidden;
 }
 
